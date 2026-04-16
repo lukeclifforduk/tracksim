@@ -42,10 +42,10 @@
         const STRAIGHT_LENGTH = 440;
         const CURVE_RADIUS = 140;
         
-        const LEFT_CX = CENTER_X - STRAIGHT_LENGTH / 2;   // 380
-        const RIGHT_CX = CENTER_X + STRAIGHT_LENGTH / 2;  // 820
-        const TOP_Y = CENTER_Y - CURVE_RADIUS;            // 210
-        const BOTTOM_Y = CENTER_Y + CURVE_RADIUS;         // 490
+        const LEFT_CX = CENTER_X - STRAIGHT_LENGTH / 2;
+        const RIGHT_CX = CENTER_X + STRAIGHT_LENGTH / 2;
+        const TOP_Y = CENTER_Y - CURVE_RADIUS;
+        const BOTTOM_Y = CENTER_Y + CURVE_RADIUS;
         
         // Total track length for perfect looping
         const TOTAL_TRACK_LENGTH = 2 * STRAIGHT_LENGTH + 2 * Math.PI * CURVE_RADIUS;
@@ -72,9 +72,17 @@
         const QUARRY_MAX_ROWS = 17;
         
         // Bottom-right quarry mirror (empty blocks)
-        const BOTTOM_QUARRY_OFFSET_X = WIDTH - 12 - BLOCK_SIZE;   // left x of rightmost block
-        const BOTTOM_QUARRY_OFFSET_Y = HEIGHT - BLOCK_SIZE + 4;   // y for bottom-most row (spills slightly below)
+        const BOTTOM_QUARRY_OFFSET_X = WIDTH - 12 - BLOCK_SIZE;
+        const BOTTOM_QUARRY_OFFSET_Y = HEIGHT - BLOCK_SIZE + 4;
         const BOTTOM_QUARRY_MAX_ROWS = 17;
+        
+        // Station settings - now centered in the middle of the map area
+        const STATION_X = 529;                    // centered over the straight sections
+        const STATION_WIDTH = 142;
+        
+        // Scaled-back parking (smaller overall area, but slightly taller)
+        const PARKING_WIDTH = 110;
+        const PARKING_HEIGHT = 55;
         
         // Colors - super clean & minimal
         const COLORS = {
@@ -91,7 +99,12 @@
             quarryMain: '#d4c3a8',
             quarryMid: '#b9a98f',
             quarryDeep: '#9e8a6f',
-            quarryOutline: '#5c5340'
+            quarryOutline: '#5c5340',
+            // Station
+            stationBuilding: '#7a7a8a',
+            stationPlatform: '#a8a8b8',
+            parkingAsphalt: '#3f3f3f',
+            parkingLine: '#e0e0e0'
         };
         
         // Get position and angle along the track
@@ -127,33 +140,23 @@
             };
         }
         
-        // Draw top-left quarry - FULL blocks (3-layer depth)
+        // Draw top-left quarry - FULL blocks
         function drawQuarry() {
             for (let row = 0; row < QUARRY_MAX_ROWS; row++) {
-                let numCols;
-                if (row === 0) {
-                    numCols = 26;                    // wide at top corner + 10-block spill right
-                } else {
-                    numCols = Math.max(4, 16 - Math.floor(row * 0.9));
-                }
-                
+                let numCols = (row === 0) ? 26 : Math.max(4, 16 - Math.floor(row * 0.9));
                 for (let col = 0; col < numCols; col++) {
                     const x = QUARRY_OFFSET_X + col * BLOCK_SIZE;
                     const y = QUARRY_OFFSET_Y + row * BLOCK_SIZE;
                     
-                    // Layer 1: main full colour
                     ctx.fillStyle = COLORS.quarryMain;
                     ctx.fillRect(x, y, BLOCK_SIZE, BLOCK_SIZE);
                     
-                    // Layer 2: slightly darker inset
                     ctx.fillStyle = COLORS.quarryMid;
                     ctx.fillRect(x + 3, y + 3, BLOCK_SIZE - 6, BLOCK_SIZE - 6);
                     
-                    // Layer 3: deepest inset
                     ctx.fillStyle = COLORS.quarryDeep;
                     ctx.fillRect(x + 7, y + 7, BLOCK_SIZE - 14, BLOCK_SIZE - 14);
                     
-                    // Clean grid outline
                     ctx.strokeStyle = COLORS.quarryOutline;
                     ctx.lineWidth = 2;
                     ctx.strokeRect(x, y, BLOCK_SIZE, BLOCK_SIZE);
@@ -161,29 +164,80 @@
             }
         }
         
-        // Draw bottom-right quarry mirror - EMPTY blocks (only dark colour)
+        // Draw bottom-right quarry mirror - EMPTY blocks
         function drawBottomQuarry() {
             for (let row = 0; row < BOTTOM_QUARRY_MAX_ROWS; row++) {
-                let numCols;
-                if (row === 0) {
-                    numCols = 26;                    // wide at bottom corner + 10-block spill left
-                } else {
-                    numCols = Math.max(4, 16 - Math.floor(row * 0.9));
-                }
-                
+                let numCols = (row === 0) ? 26 : Math.max(4, 16 - Math.floor(row * 0.9));
                 for (let col = 0; col < numCols; col++) {
                     const x = BOTTOM_QUARRY_OFFSET_X - col * BLOCK_SIZE;
                     const y = BOTTOM_QUARRY_OFFSET_Y - row * BLOCK_SIZE;
                     
-                    // Empty: only the final dark colour (no inner layers)
                     ctx.fillStyle = COLORS.quarryDeep;
                     ctx.fillRect(x, y, BLOCK_SIZE, BLOCK_SIZE);
                     
-                    // Clean grid outline
                     ctx.strokeStyle = COLORS.quarryOutline;
                     ctx.lineWidth = 2;
                     ctx.strokeRect(x, y, BLOCK_SIZE, BLOCK_SIZE);
                 }
+            }
+        }
+        
+        // Draw identical centered stations (top + bottom) with smaller scaled-back parking
+        function drawStations() {
+            const parkingX = STATION_X + (STATION_WIDTH - PARKING_WIDTH) / 2;
+            
+            // ==================== TOP STATION ====================
+            // Platform (lighter, touches track)
+            ctx.fillStyle = COLORS.stationPlatform;
+            ctx.fillRect(STATION_X, TOP_Y - 30, STATION_WIDTH, 26);
+            
+            // Building (grey)
+            ctx.fillStyle = COLORS.stationBuilding;
+            ctx.fillRect(STATION_X, TOP_Y - 30 - 78, STATION_WIDTH, 78);
+            
+            // Parking area - scaled back width, slightly taller
+            const topParkingY = TOP_Y - 30 - 78 - PARKING_HEIGHT - 4;
+            ctx.fillStyle = COLORS.parkingAsphalt;
+            ctx.fillRect(parkingX, topParkingY, PARKING_WIDTH, PARKING_HEIGHT);
+            
+            // 5 designated parking spaces - 2/3 size (narrower width + shorter height)
+            ctx.strokeStyle = COLORS.parkingLine;
+            ctx.lineWidth = 3;
+            const spotSpacing = PARKING_WIDTH / 5;
+            const lineHeight = 21; // ~2/3 of previous height
+            const lineY = topParkingY + (PARKING_HEIGHT - lineHeight) / 2;
+            for (let i = 1; i < 5; i++) {
+                const sepX = parkingX + i * spotSpacing;
+                ctx.beginPath();
+                ctx.moveTo(sepX, lineY);
+                ctx.lineTo(sepX, lineY + lineHeight);
+                ctx.stroke();
+            }
+            
+            // ==================== BOTTOM STATION (identical, mirrored) ====================
+            // Platform
+            ctx.fillStyle = COLORS.stationPlatform;
+            ctx.fillRect(STATION_X, BOTTOM_Y + 4, STATION_WIDTH, 26);
+            
+            // Building
+            ctx.fillStyle = COLORS.stationBuilding;
+            ctx.fillRect(STATION_X, BOTTOM_Y + 4 + 26, STATION_WIDTH, 78);
+            
+            // Parking area - scaled back width, slightly taller
+            const bottomParkingY = BOTTOM_Y + 4 + 26 + 78 + 6;
+            ctx.fillStyle = COLORS.parkingAsphalt;
+            ctx.fillRect(parkingX, bottomParkingY, PARKING_WIDTH, PARKING_HEIGHT);
+            
+            // 5 designated parking spaces - 2/3 size
+            ctx.strokeStyle = COLORS.parkingLine;
+            ctx.lineWidth = 3;
+            const bottomLineY = bottomParkingY + (PARKING_HEIGHT - lineHeight) / 2;
+            for (let i = 1; i < 5; i++) {
+                const sepX = parkingX + i * spotSpacing;
+                ctx.beginPath();
+                ctx.moveTo(sepX, bottomLineY);
+                ctx.lineTo(sepX, bottomLineY + lineHeight);
+                ctx.stroke();
             }
         }
         
@@ -198,6 +252,9 @@
             
             // Bottom-right quarry mirror (empty)
             drawBottomQuarry();
+            
+            // Centered stations with scaled-back parking
+            drawStations();
             
             // Track bed (32px thick)
             ctx.lineWidth = 32;
