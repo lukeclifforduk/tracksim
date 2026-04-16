@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Train SIM</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+        
+        body {
+            margin: 0;
+            padding: 0;
+            background: #0a1f0a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+            image-rendering: pixelated;
+        }
+        
+        canvas {
+            border: 12px solid #222;
+            box-shadow: 0 0 0 16px #1a3a1a;
+            image-rendering: pixelated;
+            background: #0a1f0a;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas" width="1200" height="700"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Canvas & track constants
+        const WIDTH = 1200;
+        const HEIGHT = 700;
+        const CENTER_X = 600;
+        const CENTER_Y = 350;
+        const STRAIGHT_LENGTH = 440;
+        const CURVE_RADIUS = 140;
+        
+        const LEFT_CX = CENTER_X - STRAIGHT_LENGTH / 2;   // 380
+        const RIGHT_CX = CENTER_X + STRAIGHT_LENGTH / 2;  // 820
+        const TOP_Y = CENTER_Y - CURVE_RADIUS;            // 210
+        const BOTTOM_Y = CENTER_Y + CURVE_RADIUS;         // 490
+        
+        // Total track length for perfect looping
+        const TOTAL_TRACK_LENGTH = 2 * STRAIGHT_LENGTH + 2 * Math.PI * CURVE_RADIUS;
+        
+        // Train & carriage dimensions
+        const TRAIN_LENGTH = 56;
+        const TRAIN_WIDTH = 26;
+        const CARRIAGE_LENGTH = 44;
+        const CARRIAGE_WIDTH = 26;
+        
+        // Fixed separation along track
+        const CARRIAGE_SEPARATION = 58;
+        
+        // Fixed smooth speed
+        let speed = 260;
+        let distance = 120;
+        
+        // Quarry settings - half-size blocks
+        const BLOCK_SIZE = 18;
+        
+        // Top-left quarry (full blocks)
+        const QUARRY_OFFSET_X = 12;
+        const QUARRY_OFFSET_Y = -4;
+        const QUARRY_MAX_ROWS = 17;
+        
+        // Bottom-right quarry mirror (empty blocks)
+        const BOTTOM_QUARRY_OFFSET_X = WIDTH - 12 - BLOCK_SIZE;   // left x of rightmost block
+        const BOTTOM_QUARRY_OFFSET_Y = HEIGHT - BLOCK_SIZE + 4;   // y for bottom-most row (spills slightly below)
+        const BOTTOM_QUARRY_MAX_ROWS = 17;
+        
+        // Colors - super clean & minimal
+        const COLORS = {
+            grass: '#2e8b57',
+            trackBed: '#2c2c2c',
+            rail: '#e8e8e8',
+            engineBody: '#1e90ff',
+            engineFront: '#ff4757',
+            engineWheel: '#1c2526',
+            carriageBody: '#a8b0b8',
+            carriageInner: '#5f6a72',
+            carriageWheel: '#1c2526',
+            // Quarry blocks
+            quarryMain: '#d4c3a8',
+            quarryMid: '#b9a98f',
+            quarryDeep: '#9e8a6f',
+            quarryOutline: '#5c5340'
+        };
+        
+        // Get position and angle along the track
+        function getPosition(dist) {
+            let d = dist % TOTAL_TRACK_LENGTH;
+            if (d < 0) d += TOTAL_TRACK_LENGTH;
+            
+            if (d < STRAIGHT_LENGTH) {
+                return { x: LEFT_CX + d, y: TOP_Y, angle: 0 };
+            }
+            d -= STRAIGHT_LENGTH;
+            
+            if (d < Math.PI * CURVE_RADIUS) {
+                const theta = -Math.PI / 2 + (d / CURVE_RADIUS);
+                return {
+                    x: RIGHT_CX + CURVE_RADIUS * Math.cos(theta),
+                    y: CENTER_Y + CURVE_RADIUS * Math.sin(theta),
+                    angle: theta + Math.PI / 2
+                };
+            }
+            d -= Math.PI * CURVE_RADIUS;
+            
+            if (d < STRAIGHT_LENGTH) {
+                return { x: RIGHT_CX - d, y: BOTTOM_Y, angle: Math.PI };
+            }
+            d -= STRAIGHT_LENGTH;
+            
+            const theta = Math.PI / 2 + (d / CURVE_RADIUS);
+            return {
+                x: LEFT_CX + CURVE_RADIUS * Math.cos(theta),
+                y: CENTER_Y + CURVE_RADIUS * Math.sin(theta),
+                angle: theta + Math.PI / 2
+            };
+        }
+        
+        // Draw top-left quarry - FULL blocks (3-layer depth)
+        function drawQuarry() {
+            for (let row = 0; row < QUARRY_MAX_ROWS; row++) {
+                let numCols;
+                if (row === 0) {
+                    numCols = 26;                    // wide at top corner + 10-block spill right
+                } else {
+                    numCols = Math.max(4, 16 - Math.floor(row * 0.9));
+                }
+                
+                for (let col = 0; col < numCols; col++) {
+                    const x = QUARRY_OFFSET_X + col * BLOCK_SIZE;
+                    const y = QUARRY_OFFSET_Y + row * BLOCK_SIZE;
+                    
+                    // Layer 1: main full colour
+                    ctx.fillStyle = COLORS.quarryMain;
+                    ctx.fillRect(x, y, BLOCK_SIZE, BLOCK_SIZE);
+                    
+                    // Layer 2: slightly darker inset
+                    ctx.fillStyle = COLORS.quarryMid;
+                    ctx.fillRect(x + 3, y + 3, BLOCK_SIZE - 6, BLOCK_SIZE - 6);
+                    
+                    // Layer 3: deepest inset
+                    ctx.fillStyle = COLORS.quarryDeep;
+                    ctx.fillRect(x + 7, y + 7, BLOCK_SIZE - 14, BLOCK_SIZE - 14);
+                    
+                    // Clean grid outline
+                    ctx.strokeStyle = COLORS.quarryOutline;
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x, y, BLOCK_SIZE, BLOCK_SIZE);
+                }
+            }
+        }
+        
+        // Draw bottom-right quarry mirror - EMPTY blocks (only dark colour)
+        function drawBottomQuarry() {
+            for (let row = 0; row < BOTTOM_QUARRY_MAX_ROWS; row++) {
+                let numCols;
+                if (row === 0) {
+                    numCols = 26;                    // wide at bottom corner + 10-block spill left
+                } else {
+                    numCols = Math.max(4, 16 - Math.floor(row * 0.9));
+                }
+                
+                for (let col = 0; col < numCols; col++) {
+                    const x = BOTTOM_QUARRY_OFFSET_X - col * BLOCK_SIZE;
+                    const y = BOTTOM_QUARRY_OFFSET_Y - row * BLOCK_SIZE;
+                    
+                    // Empty: only the final dark colour (no inner layers)
+                    ctx.fillStyle = COLORS.quarryDeep;
+                    ctx.fillRect(x, y, BLOCK_SIZE, BLOCK_SIZE);
+                    
+                    // Clean grid outline
+                    ctx.strokeStyle = COLORS.quarryOutline;
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x, y, BLOCK_SIZE, BLOCK_SIZE);
+                }
+            }
+        }
+        
+        // Draw extremely simple track
+        function drawTrack() {
+            // Grass background
+            ctx.fillStyle = COLORS.grass;
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            // Top-left quarry (full)
+            drawQuarry();
+            
+            // Bottom-right quarry mirror (empty)
+            drawBottomQuarry();
+            
+            // Track bed (32px thick)
+            ctx.lineWidth = 32;
+            ctx.strokeStyle = COLORS.trackBed;
+            ctx.lineCap = 'butt';
+            ctx.beginPath();
+            ctx.moveTo(LEFT_CX, TOP_Y);
+            ctx.lineTo(RIGHT_CX, TOP_Y);
+            ctx.arc(RIGHT_CX, CENTER_Y, CURVE_RADIUS, -Math.PI / 2, Math.PI / 2);
+            ctx.lineTo(LEFT_CX, BOTTOM_Y);
+            ctx.arc(LEFT_CX, CENTER_Y, CURVE_RADIUS, Math.PI / 2, 3 * Math.PI / 2);
+            ctx.stroke();
+            
+            // Simple rails
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = COLORS.rail;
+            
+            // Top straight rails
+            ctx.beginPath();
+            ctx.moveTo(LEFT_CX, TOP_Y - 10);
+            ctx.lineTo(RIGHT_CX, TOP_Y - 10);
+            ctx.moveTo(LEFT_CX, TOP_Y + 10);
+            ctx.lineTo(RIGHT_CX, TOP_Y + 10);
+            ctx.stroke();
+            
+            // Bottom straight rails
+            ctx.beginPath();
+            ctx.moveTo(RIGHT_CX, BOTTOM_Y - 10);
+            ctx.lineTo(LEFT_CX, BOTTOM_Y - 10);
+            ctx.moveTo(RIGHT_CX, BOTTOM_Y + 10);
+            ctx.lineTo(LEFT_CX, BOTTOM_Y + 10);
+            ctx.stroke();
+            
+            // Right curve rails
+            ctx.beginPath();
+            ctx.arc(RIGHT_CX, CENTER_Y, CURVE_RADIUS - 10, -Math.PI / 2, Math.PI / 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(RIGHT_CX, CENTER_Y, CURVE_RADIUS + 10, -Math.PI / 2, Math.PI / 2);
+            ctx.stroke();
+            
+            // Left curve rails
+            ctx.beginPath();
+            ctx.arc(LEFT_CX, CENTER_Y, CURVE_RADIUS - 10, Math.PI / 2, 3 * Math.PI / 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(LEFT_CX, CENTER_Y, CURVE_RADIUS + 10, Math.PI / 2, 3 * Math.PI / 2);
+            ctx.stroke();
+        }
+        
+        // Draw symmetrical top-down engine
+        function drawEngine(x, y, angle) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(angle);
+            
+            ctx.fillStyle = COLORS.engineBody;
+            ctx.fillRect(-TRAIN_LENGTH / 2, -TRAIN_WIDTH / 2, TRAIN_LENGTH, TRAIN_WIDTH);
+            
+            ctx.fillStyle = COLORS.engineFront;
+            ctx.fillRect(TRAIN_LENGTH / 2 - 14, -TRAIN_WIDTH / 2 + 2, 14, TRAIN_WIDTH - 4);
+            
+            ctx.fillStyle = COLORS.engineWheel;
+            ctx.fillRect(-20, -13, 11, 7);
+            ctx.fillRect(8, -13, 11, 7);
+            ctx.fillRect(-20, 6, 11, 7);
+            ctx.fillRect(8, 6, 11, 7);
+            
+            ctx.restore();
+        }
+        
+        // Draw simple bucket carriage
+        function drawCarriage(x, y, angle) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(angle);
+            
+            ctx.fillStyle = COLORS.carriageBody;
+            ctx.fillRect(-CARRIAGE_LENGTH / 2, -CARRIAGE_WIDTH / 2, CARRIAGE_LENGTH, CARRIAGE_WIDTH);
+            
+            ctx.fillStyle = COLORS.carriageInner;
+            const innerLength = CARRIAGE_LENGTH - 8;
+            const innerWidth = CARRIAGE_WIDTH - 6;
+            ctx.fillRect(-innerLength / 2, -innerWidth / 2, innerLength, innerWidth);
+            
+            ctx.fillStyle = COLORS.carriageWheel;
+            ctx.fillRect(-CARRIAGE_LENGTH / 2 + 8, -13, 9, 6);
+            ctx.fillRect(CARRIAGE_LENGTH / 2 - 17, -13, 9, 6);
+            ctx.fillRect(-CARRIAGE_LENGTH / 2 + 8, 7, 9, 6);
+            ctx.fillRect(CARRIAGE_LENGTH / 2 - 17, 7, 9, 6);
+            
+            ctx.restore();
+        }
+        
+        // Main animation loop
+        let lastTime = 0;
+        function animate(timestamp) {
+            if (!lastTime) lastTime = timestamp;
+            const dt = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+            
+            distance += speed * dt;
+            
+            ctx.clearRect(0, 0, WIDTH, HEIGHT);
+            drawTrack();
+            
+            const enginePos = getPosition(distance);
+            const carriage1Pos = getPosition(distance - CARRIAGE_SEPARATION);
+            const carriage2Pos = getPosition(distance - CARRIAGE_SEPARATION * 2);
+            const carriage3Pos = getPosition(distance - CARRIAGE_SEPARATION * 3);
+            
+            drawCarriage(carriage3Pos.x, carriage3Pos.y, carriage3Pos.angle);
+            drawCarriage(carriage2Pos.x, carriage2Pos.y, carriage2Pos.angle);
+            drawCarriage(carriage1Pos.x, carriage1Pos.y, carriage1Pos.angle);
+            drawEngine(enginePos.x, enginePos.y, enginePos.angle);
+            
+            requestAnimationFrame(animate);
+        }
+        
+        // Start the SIM
+        function startSim() {
+            requestAnimationFrame(animate);
+        }
+        
+        window.onload = startSim;
+    </script>
+</body>
+</html>
