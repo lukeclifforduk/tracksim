@@ -15,7 +15,6 @@
     <script>
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
-
         // Canvas & track constants
         const WIDTH = 1200;
         const HEIGHT = 700;
@@ -28,14 +27,12 @@
         const TOP_Y = CENTER_Y - CURVE_RADIUS;
         const BOTTOM_Y = CENTER_Y + CURVE_RADIUS;
         const TOTAL_TRACK_LENGTH = 2 * STRAIGHT_LENGTH + 2 * Math.PI * CURVE_RADIUS;
-
         // Train & carriage dimensions
         const TRAIN_LENGTH = 42;
         const TRAIN_WIDTH = 20;
         const CARRIAGE_LENGTH = 26;
         const CARRIAGE_WIDTH = 22;
         const CARRIAGE_SEPARATION = 36;
-
         // Train Speed and State
         let baseSpeed = 265;
         let currentSpeed = baseSpeed;
@@ -43,12 +40,10 @@
         let trainStopTimer = 0;
         let distance = 120;
         let trainAtStation = null;
-
         const STOP_DIST_1 = 285;
         const STOP_DIST_2 = STOP_DIST_1 + STRAIGHT_LENGTH + Math.PI * CURVE_RADIUS;
         const BRAKE_DISTANCE = 185;
         const ACCELERATION_RATE = 135;
-
         // Station & Parking settings
         const STATION_X = 529;
         const STATION_WIDTH = 142;
@@ -58,7 +53,6 @@
         const TOP_ROAD_Y = topParkingY + PARKING_HEIGHT / 2;
         const bottomParkingY = BOTTOM_Y + 4 + 26 + 78 + 6;
         const BOTTOM_ROAD_Y = bottomParkingY + PARKING_HEIGHT / 2;
-
         // Storage areas
         const STORAGE_WIDTH = 92;
         const STORAGE_HEIGHT = 98;
@@ -70,7 +64,6 @@
         let topStorageCount = 0;
         let bottomStorageCount = 0;
         let trainBlocks = [false, false, false];
-
         // Quarry settings
         const BLOCK_SIZE = 18;
         const QUARRY_MAX_ROWS = 17;
@@ -79,7 +72,6 @@
         const QUARRY_OFFSET_Y = TOP_ROAD_Y - 81;
         const BOTTOM_QUARRY_OFFSET_X = WIDTH - 12 - BLOCK_SIZE;
         const BOTTOM_QUARRY_OFFSET_Y = BOTTOM_ROAD_Y + 45;
-
         // Colors
         const COLORS = {
             grass: '#2e8b57', trackBed: '#2c2c2c', rail: '#e8e8e8',
@@ -93,18 +85,15 @@
             craneBase: '#555555', craneArm: '#333333',
             forkliftPath: 'rgba(230, 230, 230, 0.35)'
         };
-
         const topBlocks = [];
         const bottomBlocks = [];
         const trucks = [];
         let forklifts = [];
         let cranes = [];
-
         const TOP_FORKLIFT_HOME_X = STATION_X + 41;
         const TOP_FORKLIFT_HOME_Y = TOP_Y - 72;
         const BOTTOM_FORKLIFT_HOME_X = STATION_X + 41;
         const BOTTOM_FORKLIFT_HOME_Y = BOTTOM_Y + 48;
-
         // Road coordinates used by trucks (defined BEFORE classes)
         const topRow4Y = TOP_ROAD_Y;
         const topRow12Y = QUARRY_OFFSET_Y + 12 * BLOCK_SIZE + 9;
@@ -114,7 +103,6 @@
         const botRow11Y = BOTTOM_QUARRY_OFFSET_Y - 11 * BLOCK_SIZE + 9;
         const botCol4X = BOTTOM_QUARRY_OFFSET_X - 4 * BLOCK_SIZE + 9;
         const botCol14X = BOTTOM_QUARRY_OFFSET_X - 14 * BLOCK_SIZE + 9;
-
         function isTopRoadBlock(row, col) {
             if (row === 4 && col >= 4) return true;
             if (row === 12 && col >= 4 && col <= 14) return true;
@@ -122,7 +110,6 @@
             if (col === 14 && row >= 4 && row <= 12) return true;
             return false;
         }
-
         function isBottomRoadBlock(row, col) {
             if (row === 3 && col >= 4) return true;
             if (row === 11 && col >= 4 && col <= 14) return true;
@@ -130,14 +117,12 @@
             if (col === 14 && row >= 3 && row <= 11) return true;
             return false;
         }
-
         function initSim() {
             topBlocks.length = 0;
             bottomBlocks.length = 0;
             trucks.length = 0;
             forklifts.length = 0;
             cranes.length = 0;
-
             // Build Top Quarry
             for (let row = 0; row < QUARRY_MAX_ROWS; row++) {
                 let numCols = (row === 0) ? 26 : Math.max(4, 16 - Math.floor(row * 0.9));
@@ -146,7 +131,6 @@
                     topBlocks.push({ x: QUARRY_OFFSET_X + col * BLOCK_SIZE, y: QUARRY_OFFSET_Y + row * BLOCK_SIZE, active: true });
                 }
             }
-
             // Build Bottom Quarry
             for (let row = 0; row < BOTTOM_QUARRY_MAX_ROWS; row++) {
                 let numCols = (row === 0) ? 26 : Math.max(4, 16 - Math.floor(row * 0.9));
@@ -155,21 +139,17 @@
                     bottomBlocks.push({ x: BOTTOM_QUARRY_OFFSET_X - col * BLOCK_SIZE, y: BOTTOM_QUARRY_OFFSET_Y - row * BLOCK_SIZE, active: false });
                 }
             }
-
             for (let i = 0; i < 5; i++) {
                 trucks.push(new Truck('top', i));
                 trucks.push(new Truck('bottom', i));
             }
-
             topStorageCount = 0;
             bottomStorageCount = 0;
             trainBlocks = [false, false, false];
             trainAtStation = null;
-
             forklifts = [new Forklift('top'), new Forklift('bottom')];
             cranes = [new Crane('top'), new Crane('bottom')];
         }
-
         class Truck {
             constructor(type, index) {
                 this.type = type;
@@ -194,7 +174,6 @@
                 this.hasBlock = false;
                 this.speed = 65;
             }
-
             update(dt) {
                 switch (this.state) {
                     case 'PARKED':
@@ -220,7 +199,6 @@
                             this.targetY = this.route[0].y;
                         }
                         break;
-
                     case 'DRIVING':
                         if (this.moveToTarget(dt)) {
                             this.routeIndex++;
@@ -269,14 +247,12 @@
                             }
                         }
                         break;
-
                     case 'LOADING':
                         this.timer -= dt;
                         if (this.timer <= 0) this.state = 'DRIVING';
                         break;
                 }
             }
-
             moveToTarget(dt) {
                 let blocked = false;
                 for (let ot of trucks) {
@@ -291,7 +267,6 @@
                     }
                 }
                 if (blocked) return false;
-
                 const dx = this.targetX - this.x;
                 const dy = this.targetY - this.y;
                 const dist = Math.hypot(dx, dy);
@@ -306,7 +281,6 @@
                 this.y += Math.sin(this.angle) * move;
                 return false;
             }
-
             draw() {
                 ctx.save();
                 ctx.translate(this.x, this.y);
@@ -333,7 +307,6 @@
                 ctx.restore();
             }
         }
-
         class Forklift {
             constructor(type) {
                 this.type = type;
@@ -359,7 +332,6 @@
                 this.pathIndex = 0;
                 this.departureAngle = 0;
             }
-
             buildPathTo(destX, destY, destAngle) {
                 const path = [];
                 const spineX = STATION_X + 41;
@@ -367,7 +339,6 @@
                 const botStationCY = BOTTOM_Y + 48;
                 const topParkingLaneY = topParkingY + PARKING_HEIGHT / 2;
                 const botParkingLaneY = bottomParkingY + PARKING_HEIGHT / 2;
-
                 if (this.type === 'top') {
                     const destIsStorage = destX < STATION_X;
                     const destIsParking = destY < TOP_Y - 50 && destX >= STATION_X - 5;
@@ -397,7 +368,6 @@
                         path.push({x: destX, y: destY});
                     }
                 }
-
                 const cleaned = [];
                 for (const p of path) {
                     if (cleaned.length === 0 || Math.hypot(p.x - cleaned[cleaned.length - 1].x, p.y - cleaned[cleaned.length - 1].y) > 2) cleaned.push(p);
@@ -406,7 +376,6 @@
                 this.pathIndex = 0;
                 this.departureAngle = destAngle;
             }
-
             update(dt) {
                 if (this.state === 'HOME' || this.state === 'IDLE') {
                     if (this.state === 'IDLE' && this.idleTimer > 0) {
@@ -428,7 +397,6 @@
                     }
                 }
             }
-
             findNextTask() {
                 if (this.type === 'top') {
                     if (topStorageCount >= STORAGE_CAPACITY) { this.goHomeIfNotThere(); return; }
@@ -458,14 +426,12 @@
                     this.goHomeIfNotThere();
                 }
             }
-
             goHomeIfNotThere() {
                 const atHome = Math.abs(this.x - this.homeX) < 3 && Math.abs(this.y - this.homeY) < 3;
                 if (atHome) { this.state = 'HOME'; this.angle = this.homeAngle; return; }
                 this.buildPathTo(this.homeX, this.homeY, this.homeAngle);
                 this.state = 'GOING_HOME';
             }
-
             followPath(dt) {
                 if (this.pathIndex >= this.path.length) return true;
                 const wp = this.path[this.pathIndex];
@@ -485,12 +451,10 @@
                 this.y += Math.sin(this.angle) * move;
                 return false;
             }
-
             arriveAtTarget() {
                 this.state = 'WORKING';
                 this.timer = 0.75;
             }
-
             completeWork() {
                 if (this.type === 'top') {
                     if (this.nextTask === 'UNLOAD_TRUCK') {
@@ -551,7 +515,6 @@
                     }
                 }
             }
-
             draw() {
                 ctx.save();
                 ctx.translate(this.x, this.y);
@@ -572,7 +535,6 @@
                 ctx.restore();
             }
         }
-
         class Crane {
             constructor(type) {
                 this.type = type;
@@ -582,188 +544,215 @@
                 this.pivotY = this.baseY - 82;
                 this.minLength = 28;
                 this.maxLength = 160;
-                this.currentAngle = type === 'top' ? Math.PI * 0.6 : Math.PI * 1.4;
+                this.defaultAngle = this.normalizeAngle(type === 'top' ? Math.PI * 0.6 : Math.PI * 1.4);
+                this.currentAngle = this.defaultAngle;
                 this.currentLength = this.minLength;
-                this.targetAngle = this.currentAngle;
+                this.targetAngle = this.defaultAngle;
                 this.targetLength = this.minLength;
                 this.hookX = this.pivotX + Math.cos(this.currentAngle) * this.currentLength;
                 this.hookY = this.pivotY + Math.sin(this.currentAngle) * this.currentLength;
-                this.carrying = false;
+                this.isCarrying = false;
                 this.state = 'IDLE';
                 this.timer = 0;
                 this.currentCarriage = -1;
-                this.rotateSpeed = 3.2;
+                this.rotateSpeed = 2.8;
                 this.extendSpeed = 155;
-                this.pickWorldX = 0;
-                this.pickWorldY = 0;
-                this.dropWorldX = 0;
-                this.dropWorldY = 0;
+                this.pickTarget = {x: 0, y: 0};
+                this.dropTarget = {x: 0, y: 0};
             }
-
+            normalizeAngle(a) {
+                let norm = a % (2 * Math.PI);
+                if (norm < 0) norm += 2 * Math.PI;
+                return norm;
+            }
             aimAt(wx, wy) {
                 const dx = wx - this.pivotX;
                 const dy = wy - this.pivotY;
-                const ang = Math.atan2(dy, dx);
+                let ang = Math.atan2(dy, dx);
+                ang = this.normalizeAngle(ang);
                 const len = Math.min(this.maxLength, Math.max(this.minLength, Math.hypot(dx, dy)));
                 return { angle: ang, length: len };
             }
-
-            armSettled() {
-                let angleDelta = this.targetAngle - this.currentAngle;
-                angleDelta = ((angleDelta + Math.PI) % (2 * Math.PI)) - Math.PI;
-                const lenDelta = this.targetLength - this.currentLength;
-                return Math.abs(angleDelta) < 0.08 && Math.abs(lenDelta) < 2.5;
-            }
-
             angleSettled() {
-                let angleDelta = this.targetAngle - this.currentAngle;
-                angleDelta = ((angleDelta + Math.PI) % (2 * Math.PI)) - Math.PI;
-                return Math.abs(angleDelta) < 0.06;
+                let delta = this.targetAngle - this.currentAngle;
+                delta = ((delta + Math.PI) % (2 * Math.PI)) - Math.PI;
+                return Math.abs(delta) < 0.055;
             }
-
-            stepArm(dt) {
+            armSettled() {
+                let delta = this.targetAngle - this.currentAngle;
+                delta = ((delta + Math.PI) % (2 * Math.PI)) - Math.PI;
+                const lenDelta = this.targetLength - this.currentLength;
+                return Math.abs(delta) < 0.08 && Math.abs(lenDelta) < 3.5;
+            }
+            updateArm(dt) {
                 let angleDelta = this.targetAngle - this.currentAngle;
                 angleDelta = ((angleDelta + Math.PI) % (2 * Math.PI)) - Math.PI;
-                this.currentAngle += angleDelta * this.rotateSpeed * dt;
-                if (Math.abs(angleDelta) < 0.12) {
+                const rotationStep = Math.max(-this.rotateSpeed * dt, Math.min(this.rotateSpeed * dt, angleDelta));
+                this.currentAngle += rotationStep;
+                this.currentAngle = this.normalizeAngle(this.currentAngle);
+                if (Math.abs(angleDelta) < 0.13) {
                     const lenDelta = this.targetLength - this.currentLength;
                     this.currentLength += Math.sign(lenDelta) * Math.min(Math.abs(lenDelta), this.extendSpeed * dt);
                 }
                 this.hookX = this.pivotX + Math.cos(this.currentAngle) * this.currentLength;
                 this.hookY = this.pivotY + Math.sin(this.currentAngle) * this.currentLength;
             }
-
-            update(dt) {
-                if (trainAtStation !== this.type || trainState !== 'STOPPED') {
-                    this.targetLength = this.minLength;
-                    this.stepArm(dt);
-                    if (this.state !== 'IDLE') {
-                        this.carrying = false;
-                        this.state = 'IDLE';
-                        this.currentCarriage = -1;
+            isReady() {
+                // Crane is ready for train departure ONLY when fully retracted, empty, and idle.
+                // Angle does NOT matter during operation (only final default matters for departure).
+                return this.state === 'IDLE' && !this.isCarrying && Math.abs(this.currentLength - this.minLength) < 4;
+            }
+            canStartNewTask() {
+                if (this.type === 'top') {
+                    return topStorageCount > 0 && !trainBlocks.every(b => b);
+                } else {
+                    return trainBlocks.some(b => b) && bottomStorageCount < STORAGE_CAPACITY;
+                }
+            }
+            preparePick() {
+                if (this.type === 'top') {
+                    this.pickTarget = {x: TOP_STORAGE_X + STORAGE_WIDTH / 2, y: TOP_STORAGE_Y + STORAGE_HEIGHT / 2};
+                } else {
+                    const loadedIdx = trainBlocks.findIndex(b => b);
+                    if (loadedIdx === -1) return false;
+                    this.currentCarriage = loadedIdx;
+                    const carriageOffset = CARRIAGE_SEPARATION * (loadedIdx + 1);
+                    const pos = getPosition(distance - carriageOffset);
+                    this.pickTarget = {x: pos.x, y: pos.y - 8};
+                }
+                const aim = this.aimAt(this.pickTarget.x, this.pickTarget.y);
+                this.targetAngle = aim.angle;
+                this.targetLength = this.minLength;
+                return true;
+            }
+            performPick() {
+                if (this.type === 'top') {
+                    if (topStorageCount > 0) {
+                        topStorageCount--;
+                        this.isCarrying = true;
                     }
+                } else {
+                    if (this.currentCarriage >= 0 && trainBlocks[this.currentCarriage]) {
+                        trainBlocks[this.currentCarriage] = false;
+                        this.isCarrying = true;
+                    }
+                }
+            }
+            prepareDrop() {
+                if (this.type === 'top') {
+                    const emptyIdx = trainBlocks.findIndex(b => !b);
+                    if (emptyIdx >= 0) {
+                        this.currentCarriage = emptyIdx;
+                        const carriageOffset = CARRIAGE_SEPARATION * (emptyIdx + 1);
+                        const pos = getPosition(distance - carriageOffset);
+                        this.dropTarget = {x: pos.x, y: pos.y - 8};
+                    }
+                } else {
+                    this.dropTarget = {x: BOTTOM_STORAGE_X + STORAGE_WIDTH / 2, y: BOTTOM_STORAGE_Y + STORAGE_HEIGHT / 2};
+                }
+                const aim = this.aimAt(this.dropTarget.x, this.dropTarget.y);
+                this.targetAngle = aim.angle;
+                this.targetLength = this.minLength;
+            }
+            performDrop() {
+                if (this.type === 'top') {
+                    if (this.isCarrying && this.currentCarriage >= 0) {
+                        trainBlocks[this.currentCarriage] = true;
+                    }
+                } else {
+                    if (this.isCarrying) {
+                        bottomStorageCount = Math.min(STORAGE_CAPACITY, bottomStorageCount + 1);
+                    }
+                }
+                this.isCarrying = false;
+            }
+            update(dt) {
+                this.updateArm(dt);
+                if (trainAtStation !== this.type || trainState !== 'STOPPED') {
+                    this.targetAngle = this.defaultAngle;
+                    this.targetLength = this.minLength;
+                    this.isCarrying = false;
+                    this.state = 'IDLE';
                     return;
                 }
-                this.stepArm(dt);
                 switch (this.state) {
                     case 'IDLE':
-                        if (this.type === 'top') {
-                            if (topStorageCount > 0 && !trainBlocks.every(b => b)) {
-                                this.pickWorldX = TOP_STORAGE_X + STORAGE_WIDTH / 2;
-                                this.pickWorldY = TOP_STORAGE_Y + STORAGE_HEIGHT / 2;
-                                const aim = this.aimAt(this.pickWorldX, this.pickWorldY);
-                                this.targetAngle = aim.angle;
-                                this.targetLength = this.minLength;
-                                this.state = 'ROTATING_TO_PICK';
-                            }
-                        } else {
-                            const loadedIdx = trainBlocks.findIndex(b => b);
-                            if (loadedIdx !== -1) {
-                                this.currentCarriage = loadedIdx;
-                                const carriageOffset = CARRIAGE_SEPARATION * (loadedIdx + 1);
-                                const pos = getPosition(distance - carriageOffset);
-                                this.pickWorldX = pos.x;
-                                this.pickWorldY = pos.y - 8;
-                                const aim = this.aimAt(this.pickWorldX, this.pickWorldY);
-                                this.targetAngle = aim.angle;
-                                this.targetLength = this.minLength;
-                                this.state = 'ROTATING_TO_PICK';
-                            }
+                        if (this.canStartNewTask() && this.preparePick()) {
+                            this.state = 'ROTATE_TO_PICK';
                         }
                         break;
-
-                    case 'ROTATING_TO_PICK':
+                    case 'ROTATE_TO_PICK':
+                        // Step 2: Rotate while fully retracted until pointing directly at the block
                         if (this.angleSettled()) {
-                            const aim = this.aimAt(this.pickWorldX, this.pickWorldY);
+                            const aim = this.aimAt(this.pickTarget.x, this.pickTarget.y);
                             this.targetLength = aim.length;
-                            this.state = 'EXTENDING_TO_PICK';
+                            this.state = 'EXTEND_TO_PICK';
                         }
                         break;
-
-                    case 'EXTENDING_TO_PICK':
+                    case 'EXTEND_TO_PICK':
+                        // Step 3: Extend until right over the block
                         if (this.armSettled()) {
                             this.state = 'PICKING';
                             this.timer = 0.45;
                         }
                         break;
-
                     case 'PICKING':
                         this.timer -= dt;
                         if (this.timer <= 0) {
-                            if (this.type === 'top') {
-                                if (topStorageCount > 0) { topStorageCount--; this.carrying = true; }
-                            } else {
-                                if (this.currentCarriage >= 0 && trainBlocks[this.currentCarriage]) {
-                                    trainBlocks[this.currentCarriage] = false;
-                                    this.carrying = true;
-                                }
-                            }
+                            this.performPick();
                             this.targetLength = this.minLength;
-                            this.state = 'RETRACTING_AFTER_PICK';
+                            this.state = 'RETRACT_AFTER_PICK';
                         }
                         break;
-
-                    case 'RETRACTING_AFTER_PICK':
+                    case 'RETRACT_AFTER_PICK':
+                        // Step 4: Retract fully while REMAINING pointed in the same direction
                         if (this.armSettled()) {
-                            if (!this.carrying) { this.state = 'IDLE'; break; }
-                            if (this.type === 'top') {
-                                this.currentCarriage = trainBlocks.findIndex(b => !b);
-                                if (this.currentCarriage < 0) {
-                                    topStorageCount = Math.min(STORAGE_CAPACITY, topStorageCount + 1);
-                                    this.carrying = false;
-                                    this.state = 'IDLE';
-                                    break;
-                                }
-                                const carriageOffset = CARRIAGE_SEPARATION * (this.currentCarriage + 1);
-                                const pos = getPosition(distance - carriageOffset);
-                                this.dropWorldX = pos.x;
-                                this.dropWorldY = pos.y - 8;
-                            } else {
-                                this.dropWorldX = BOTTOM_STORAGE_X + STORAGE_WIDTH / 2;
-                                this.dropWorldY = BOTTOM_STORAGE_Y + STORAGE_HEIGHT / 2;
-                            }
-                            const aim = this.aimAt(this.dropWorldX, this.dropWorldY);
-                            this.targetAngle = aim.angle;
-                            this.targetLength = this.minLength;
-                            this.state = 'ROTATING_TO_DROP';
+                            this.prepareDrop();
+                            this.state = 'ROTATE_TO_DROP';
                         }
                         break;
-
-                    case 'ROTATING_TO_DROP':
+                    case 'ROTATE_TO_DROP':
+                        // Step 5: Rotate (retracted) to face deposit location
                         if (this.angleSettled()) {
-                            const aim = this.aimAt(this.dropWorldX, this.dropWorldY);
+                            const aim = this.aimAt(this.dropTarget.x, this.dropTarget.y);
                             this.targetLength = aim.length;
-                            this.state = 'EXTENDING_TO_DROP';
+                            this.state = 'EXTEND_TO_DROP';
                         }
                         break;
-
-                    case 'EXTENDING_TO_DROP':
+                    case 'EXTEND_TO_DROP':
+                        // Step 6: Extend perfectly above deposit location
                         if (this.armSettled()) {
                             this.state = 'DROPPING';
                             this.timer = 0.45;
                         }
                         break;
-
                     case 'DROPPING':
                         this.timer -= dt;
                         if (this.timer <= 0) {
-                            if (this.type === 'top') {
-                                if (this.currentCarriage >= 0 && this.carrying) trainBlocks[this.currentCarriage] = true;
-                            } else {
-                                if (this.carrying) bottomStorageCount = Math.min(STORAGE_CAPACITY, bottomStorageCount + 1);
-                            }
-                            this.carrying = false;
+                            this.performDrop();
                             this.targetLength = this.minLength;
-                            this.state = 'RETRACTING_AFTER_DROP';
+                            this.state = 'RETRACT_AFTER_DROP';
                         }
                         break;
-
-                    case 'RETRACTING_AFTER_DROP':
-                        if (this.armSettled()) this.state = 'IDLE';
+                    case 'RETRACT_AFTER_DROP':
+                        // Final retract (still at drop angle). Only go to default if train task is COMPLETE.
+                        if (this.armSettled()) {
+                            if (this.canStartNewTask()) {
+                                // Chain next block immediately from retracted position (no default reset)
+                                if (this.preparePick()) {
+                                    this.state = 'ROTATE_TO_PICK';
+                                } else {
+                                    this.state = 'IDLE';
+                                }
+                            } else {
+                                // Only now return to default retracted position
+                                this.targetAngle = this.defaultAngle;
+                                this.state = 'IDLE';
+                            }
+                        }
                         break;
                 }
             }
-
             draw() {
                 ctx.save();
                 ctx.translate(this.baseX, this.baseY);
@@ -778,7 +767,7 @@
                 ctx.stroke();
                 ctx.fillStyle = '#111';
                 ctx.fillRect(this.hookX - this.baseX - 6, this.hookY - this.baseY - 8, 12, 14);
-                if (this.carrying) {
+                if (this.isCarrying) {
                     ctx.fillStyle = COLORS.quarryMain;
                     ctx.fillRect(this.hookX - this.baseX - 9, this.hookY - this.baseY - 27, 18, 18);
                     ctx.fillStyle = COLORS.quarryMid;
@@ -787,7 +776,6 @@
                 ctx.restore();
             }
         }
-
         function getPosition(dist) {
             let d = dist % TOTAL_TRACK_LENGTH;
             if (d < 0) d += TOTAL_TRACK_LENGTH;
@@ -803,7 +791,6 @@
             const theta = Math.PI / 2 + (d / CURVE_RADIUS);
             return { x: LEFT_CX + CURVE_RADIUS * Math.cos(theta), y: CENTER_Y + CURVE_RADIUS * Math.sin(theta), angle: theta + Math.PI / 2 };
         }
-
         function drawForkliftPaths() {
             ctx.save();
             ctx.strokeStyle = COLORS.forkliftPath;
@@ -812,7 +799,6 @@
             const spineX = STATION_X + 41;
             const parkingX = STATION_X + (STATION_WIDTH - PARKING_WIDTH) / 2;
             const spotSpacing = PARKING_WIDTH / 5;
-
             const topStationCY = TOP_Y - 72;
             const topParkingLaneY = topParkingY + PARKING_HEIGHT / 2;
             const topStorageInX = TOP_STORAGE_X + STORAGE_WIDTH / 2;
@@ -829,7 +815,6 @@
                 ctx.lineTo(bx, topParkingLaneY - 6);
             }
             ctx.stroke();
-
             const botStationCY = BOTTOM_Y + 48;
             const botParkingLaneY = bottomParkingY + PARKING_HEIGHT / 2;
             const botStorageInX = BOTTOM_STORAGE_X + STORAGE_WIDTH / 2;
@@ -846,11 +831,9 @@
                 ctx.lineTo(bx, botParkingLaneY + 6);
             }
             ctx.stroke();
-
             ctx.setLineDash([]);
             ctx.restore();
         }
-
         function drawRoads() {
             const parkingX = STATION_X + (STATION_WIDTH - PARKING_WIDTH) / 2;
             ctx.lineJoin = 'round';
@@ -871,7 +854,6 @@
             ctx.lineTo(botCol14X, botRow11Y);
             ctx.lineTo(botCol14X, BOTTOM_ROAD_Y);
             ctx.stroke();
-
             ctx.strokeStyle = COLORS.parkingLine;
             ctx.lineWidth = 2;
             ctx.setLineDash([8, 8]);
@@ -893,7 +875,6 @@
             ctx.lineJoin = 'miter';
             ctx.lineCap = 'butt';
         }
-
         function drawQuarryBlocks() {
             const drawBlocks = (blocks) => {
                 for (let b of blocks) {
@@ -916,12 +897,10 @@
             drawBlocks(topBlocks);
             drawBlocks(bottomBlocks);
         }
-
         function drawStations() {
             const parkingX = STATION_X + (STATION_WIDTH - PARKING_WIDTH) / 2;
             const spotSpacing = PARKING_WIDTH / 5;
             const lineHeight = 21;
-
             ctx.fillStyle = COLORS.stationPlatform;
             ctx.fillRect(STATION_X, TOP_Y - 30, STATION_WIDTH, 26);
             ctx.fillStyle = COLORS.stationBuilding;
@@ -941,7 +920,6 @@
             ctx.strokeStyle = '#e0e0e0';
             ctx.lineWidth = 3;
             ctx.strokeRect(STATION_X + 18, TOP_Y - 88, 46, 32);
-
             ctx.fillStyle = COLORS.stationPlatform;
             ctx.fillRect(STATION_X, BOTTOM_Y + 4, STATION_WIDTH, 26);
             ctx.fillStyle = COLORS.stationBuilding;
@@ -958,7 +936,6 @@
             ctx.strokeRect(STATION_X + 18, BOTTOM_Y + 32, 46, 32);
             ctx.setLineDash([]);
         }
-
         function drawStorages() {
             ctx.strokeStyle = '#ffffff';
             ctx.lineWidth = 4;
@@ -967,7 +944,6 @@
             ctx.fillRect(TOP_STORAGE_X + 4, TOP_STORAGE_Y + 4, STORAGE_WIDTH - 8, STORAGE_HEIGHT - 8);
             ctx.strokeRect(BOTTOM_STORAGE_X, BOTTOM_STORAGE_Y, STORAGE_WIDTH, STORAGE_HEIGHT);
             ctx.fillRect(BOTTOM_STORAGE_X + 4, BOTTOM_STORAGE_Y + 4, STORAGE_WIDTH - 8, STORAGE_HEIGHT - 8);
-
             const cols = 5;
             const cellStep = 15;
             for (let i = 0; i < topStorageCount; i++) {
@@ -987,7 +963,6 @@
                 ctx.fillRect(sx + 2, sy + 2, 9, 9);
             }
         }
-
         function drawRails() {
             ctx.lineWidth = 28;
             ctx.strokeStyle = COLORS.trackBed;
@@ -998,7 +973,6 @@
             ctx.lineTo(LEFT_CX, BOTTOM_Y);
             ctx.arc(LEFT_CX, CENTER_Y, CURVE_RADIUS, Math.PI / 2, 3 * Math.PI / 2);
             ctx.stroke();
-
             ctx.lineWidth = 4;
             ctx.strokeStyle = COLORS.rail;
             ctx.beginPath();
@@ -1026,7 +1000,6 @@
             ctx.arc(LEFT_CX, CENTER_Y, CURVE_RADIUS + 9, Math.PI / 2, 3 * Math.PI / 2);
             ctx.stroke();
         }
-
         function drawEngine(x, y, angle) {
             ctx.save();
             ctx.translate(x, y);
@@ -1042,7 +1015,6 @@
             ctx.fillRect(6, 4, 9, 6);
             ctx.restore();
         }
-
         function drawCarriage(x, y, angle, hasBlock) {
             ctx.save();
             ctx.translate(x, y);
@@ -1064,7 +1036,6 @@
             }
             ctx.restore();
         }
-
         let lastTime = 0;
         function animate(timestamp) {
             if (!lastTime) lastTime = timestamp;
@@ -1087,11 +1058,18 @@
                     trainStopTimer = 999;
                 }
             } else if (trainState === 'STOPPED') {
-                trainStopTimer -= dt;
-                const isTopFullyLoaded = trainAtStation === 'top' && trainBlocks.every(b => b);
-                const isBottomFullyEmptied = trainAtStation === 'bottom' && !trainBlocks.some(b => b);
-                if (isTopFullyLoaded || isBottomFullyEmptied) trainStopTimer = 0;
-                if (trainStopTimer <= 0) {
+                // Train departs ONLY when fully loaded/unloaded AND crane is empty + fully retracted
+                let readyToDepart = false;
+                if (trainAtStation === 'top') {
+                    const isFullyLoaded = trainBlocks.every(b => b);
+                    const craneReady = cranes[0].isReady();
+                    readyToDepart = isFullyLoaded && craneReady;
+                } else if (trainAtStation === 'bottom') {
+                    const isFullyEmptied = !trainBlocks.some(b => b);
+                    const craneReady = cranes[1].isReady();
+                    readyToDepart = isFullyEmptied && craneReady;
+                }
+                if (readyToDepart) {
                     trainState = 'ACCELERATING';
                     trainAtStation = null;
                 }
@@ -1113,7 +1091,6 @@
             ctx.clearRect(0, 0, WIDTH, HEIGHT);
             ctx.fillStyle = COLORS.grass;
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
-
             drawRoads();
             drawForkliftPaths();
             drawQuarryBlocks();
@@ -1136,7 +1113,6 @@
 
             requestAnimationFrame(animate);
         }
-
         window.onload = () => {
             initSim();
             requestAnimationFrame(animate);
