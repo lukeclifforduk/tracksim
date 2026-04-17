@@ -40,7 +40,7 @@
         let trainStopTimer = 0;
         let distance = 120;
         let trainAtStation = null;
-        const STOP_DIST_1 = 285;
+        const STOP_DIST_1 = 310;   // ← set to 310 (back ~1.5 train lengths from previous 375). All 5 bucket carriages now align closely with the station platform (x ≈ 525–669) while the engine sits slightly forward/off to the side (x ≈ 705).
         const STOP_DIST_2 = STOP_DIST_1 + STRAIGHT_LENGTH + Math.PI * CURVE_RADIUS;
         const BRAKE_DISTANCE = 185;
         const ACCELERATION_RATE = 135;
@@ -63,7 +63,7 @@
         const STORAGE_CAPACITY = 20;
         let topStorageCount = 0;
         let bottomStorageCount = 0;
-        let trainBlocks = [false, false, false];
+        let trainBlocks = [false, false, false, false, false];
         // Quarry settings
         const BLOCK_SIZE = 18;
         const QUARRY_MAX_ROWS = 17;
@@ -145,7 +145,7 @@
             }
             topStorageCount = 0;
             bottomStorageCount = 0;
-            trainBlocks = [false, false, false];
+            trainBlocks = [false, false, false, false, false];
             trainAtStation = null;
             forklifts = [new Forklift('top'), new Forklift('bottom')];
             cranes = [new Crane('top'), new Crane('bottom')];
@@ -598,8 +598,6 @@
                 this.hookY = this.pivotY + Math.sin(this.currentAngle) * this.currentLength;
             }
             isReady() {
-                // Crane is ready for train departure ONLY when fully retracted, empty, and idle.
-                // Angle does NOT matter during operation (only final default matters for departure).
                 return this.state === 'IDLE' && !this.isCarrying && Math.abs(this.currentLength - this.minLength) < 4;
             }
             canStartNewTask() {
@@ -682,7 +680,6 @@
                         }
                         break;
                     case 'ROTATE_TO_PICK':
-                        // Step 2: Rotate while fully retracted until pointing directly at the block
                         if (this.angleSettled()) {
                             const aim = this.aimAt(this.pickTarget.x, this.pickTarget.y);
                             this.targetLength = aim.length;
@@ -690,7 +687,6 @@
                         }
                         break;
                     case 'EXTEND_TO_PICK':
-                        // Step 3: Extend until right over the block
                         if (this.armSettled()) {
                             this.state = 'PICKING';
                             this.timer = 0.45;
@@ -705,14 +701,12 @@
                         }
                         break;
                     case 'RETRACT_AFTER_PICK':
-                        // Step 4: Retract fully while REMAINING pointed in the same direction
                         if (this.armSettled()) {
                             this.prepareDrop();
                             this.state = 'ROTATE_TO_DROP';
                         }
                         break;
                     case 'ROTATE_TO_DROP':
-                        // Step 5: Rotate (retracted) to face deposit location
                         if (this.angleSettled()) {
                             const aim = this.aimAt(this.dropTarget.x, this.dropTarget.y);
                             this.targetLength = aim.length;
@@ -720,7 +714,6 @@
                         }
                         break;
                     case 'EXTEND_TO_DROP':
-                        // Step 6: Extend perfectly above deposit location
                         if (this.armSettled()) {
                             this.state = 'DROPPING';
                             this.timer = 0.45;
@@ -735,17 +728,14 @@
                         }
                         break;
                     case 'RETRACT_AFTER_DROP':
-                        // Final retract (still at drop angle). Only go to default if train task is COMPLETE.
                         if (this.armSettled()) {
                             if (this.canStartNewTask()) {
-                                // Chain next block immediately from retracted position (no default reset)
                                 if (this.preparePick()) {
                                     this.state = 'ROTATE_TO_PICK';
                                 } else {
                                     this.state = 'IDLE';
                                 }
                             } else {
-                                // Only now return to default retracted position
                                 this.targetAngle = this.defaultAngle;
                                 this.state = 'IDLE';
                             }
@@ -1042,12 +1032,10 @@
             let dt = (timestamp - lastTime) / 1000;
             if (dt > 0.1) dt = 0.1;
             lastTime = timestamp;
-
             let d = distance % TOTAL_TRACK_LENGTH;
             let dist1 = (STOP_DIST_1 - d + TOTAL_TRACK_LENGTH) % TOTAL_TRACK_LENGTH;
             let dist2 = (STOP_DIST_2 - d + TOTAL_TRACK_LENGTH) % TOTAL_TRACK_LENGTH;
             let closestDist = Math.min(dist1, dist2);
-
             if (closestDist < BRAKE_DISTANCE && trainState !== 'STOPPED' && trainState !== 'ACCELERATING') {
                 trainState = 'DECELERATING';
                 currentSpeed = Math.max(8, baseSpeed * Math.pow(closestDist / BRAKE_DISTANCE, 0.78));
@@ -1058,7 +1046,6 @@
                     trainStopTimer = 999;
                 }
             } else if (trainState === 'STOPPED') {
-                // Train departs ONLY when fully loaded/unloaded AND crane is empty + fully retracted
                 let readyToDepart = false;
                 if (trainAtStation === 'top') {
                     const isFullyLoaded = trainBlocks.every(b => b);
@@ -1081,13 +1068,10 @@
                     trainAtStation = null;
                 }
             }
-
             distance += currentSpeed * dt;
-
             for (let t of trucks) t.update(dt);
             for (let f of forklifts) f.update(dt);
             for (let c of cranes) c.update(dt);
-
             ctx.clearRect(0, 0, WIDTH, HEIGHT);
             ctx.fillStyle = COLORS.grass;
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
@@ -1100,17 +1084,18 @@
             for (let f of forklifts) f.draw();
             for (let c of cranes) c.draw();
             drawRails();
-
             const enginePos = getPosition(distance);
             const carriage1Pos = getPosition(distance - CARRIAGE_SEPARATION);
             const carriage2Pos = getPosition(distance - CARRIAGE_SEPARATION * 2);
             const carriage3Pos = getPosition(distance - CARRIAGE_SEPARATION * 3);
-
+            const carriage4Pos = getPosition(distance - CARRIAGE_SEPARATION * 4);
+            const carriage5Pos = getPosition(distance - CARRIAGE_SEPARATION * 5);
+            drawCarriage(carriage5Pos.x, carriage5Pos.y, carriage5Pos.angle, trainBlocks[4]);
+            drawCarriage(carriage4Pos.x, carriage4Pos.y, carriage4Pos.angle, trainBlocks[3]);
             drawCarriage(carriage3Pos.x, carriage3Pos.y, carriage3Pos.angle, trainBlocks[2]);
             drawCarriage(carriage2Pos.x, carriage2Pos.y, carriage2Pos.angle, trainBlocks[1]);
             drawCarriage(carriage1Pos.x, carriage1Pos.y, carriage1Pos.angle, trainBlocks[0]);
             drawEngine(enginePos.x, enginePos.y, enginePos.angle);
-
             requestAnimationFrame(animate);
         }
         window.onload = () => {
