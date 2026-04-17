@@ -40,7 +40,7 @@
         let trainStopTimer = 0;
         let distance = 120;
         let trainAtStation = null;
-        const STOP_DIST_1 = 310;   // ← set to 310 (back ~1.5 train lengths from previous 375). All 5 bucket carriages now align closely with the station platform (x ≈ 525–669) while the engine sits slightly forward/off to the side (x ≈ 705).
+        const STOP_DIST_1 = 310;
         const STOP_DIST_2 = STOP_DIST_1 + STRAIGHT_LENGTH + Math.PI * CURVE_RADIUS;
         const BRAKE_DISTANCE = 185;
         const ACCELERATION_RATE = 135;
@@ -123,17 +123,17 @@
             trucks.length = 0;
             forklifts.length = 0;
             cranes.length = 0;
-            // Build Top Quarry
+            // Build Top Quarry – increased ~15% blocks, removed top-row spill (now aligns with row below)
             for (let row = 0; row < QUARRY_MAX_ROWS; row++) {
-                let numCols = (row === 0) ? 26 : Math.max(4, 16 - Math.floor(row * 0.9));
+                let numCols = Math.max(4, 18 - Math.floor(row * 0.9));   // base widened to 18, no special wide row=0
                 for (let col = 0; col < numCols; col++) {
                     if (isTopRoadBlock(row, col)) continue;
                     topBlocks.push({ x: QUARRY_OFFSET_X + col * BLOCK_SIZE, y: QUARRY_OFFSET_Y + row * BLOCK_SIZE, active: true });
                 }
             }
-            // Build Bottom Quarry
+            // Build Bottom Quarry – increased ~15% blocks, removed bottom-row spill (now aligns with row above)
             for (let row = 0; row < BOTTOM_QUARRY_MAX_ROWS; row++) {
-                let numCols = (row === 0) ? 26 : Math.max(4, 16 - Math.floor(row * 0.9));
+                let numCols = Math.max(4, 18 - Math.floor(row * 0.9));   // base widened to 18, no special wide row=0
                 for (let col = 0; col < numCols; col++) {
                     if (isBottomRoadBlock(row, col)) continue;
                     bottomBlocks.push({ x: BOTTOM_QUARRY_OFFSET_X - col * BLOCK_SIZE, y: BOTTOM_QUARRY_OFFSET_Y - row * BLOCK_SIZE, active: false });
