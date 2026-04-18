@@ -92,10 +92,16 @@
         const trucks = [];
         let forklifts = [];
         let cranes = [];
-        const TOP_FORKLIFT_HOME_X = STATION_X + 41;
-        const TOP_FORKLIFT_HOME_Y = TOP_Y - 72;
-        const BOTTOM_FORKLIFT_HOME_X = STATION_X + 41;
-        const BOTTOM_FORKLIFT_HOME_Y = BOTTOM_Y + 48;
+        // Forklift home positions: 2px gap from station-building corner.
+        // Station building top edge = TOP_Y - 108, bottom edge = TOP_Y - 30 (top station)
+        //                          = BOTTOM_Y + 30, BOTTOM_Y + 108 (bottom station)
+        // Dashed rect is 24 wide x 38 tall, forklift visual center offset from anchor
+        // by (+1.8, +1.35) for top (angle PI/2) and (-1.8, -1.35) for bottom (angle -PI/2).
+        // Anchor = rect-center - visual-offset, so:
+        const TOP_FORKLIFT_HOME_X = STATION_X + STATION_WIDTH - 2 - 12 - 2;   // right-aligned, 2px gap, 12 half-width, 2 offset
+        const TOP_FORKLIFT_HOME_Y = (TOP_Y - 108) + 2 + 19 - 1;                // top-aligned, 2px gap, 19 half-height, 1 offset
+        const BOTTOM_FORKLIFT_HOME_X = STATION_X + 2 + 12 + 2;                 // left-aligned, 2px gap, 12 half-width, 2 offset
+        const BOTTOM_FORKLIFT_HOME_Y = (BOTTOM_Y + 108) - 2 - 19 + 1;          // bottom-aligned, 2px gap, 19 half-height, 1 offset
         // Road coordinates used by trucks
         const topRow4Y = TOP_ROAD_Y;
         const topRow14Y = QUARRY_OFFSET_Y + 14 * BLOCK_SIZE + 9;
@@ -272,7 +278,12 @@
                             let chosen = null;
                             if (candidates.length > 0) chosen = candidates[Math.floor(Math.random() * candidates.length)];
                             else if (nearest) chosen = nearest;
-                            if (chosen) { chosen.active = true; this.hasBlock = false; }
+                            if (chosen) {
+                                chosen.active = true;
+                                this.hasBlock = false;
+                                this.state = 'LOADING'; // same freeze as top pickup
+                                this.timer = 1.0;
+                            }
                         }
                         if (this.type === 'top' && !this.hasBlock && this.routeIndex >= 1 && this.routeIndex <= 4) {
                             this.scanTimer -= dt;
@@ -361,7 +372,7 @@
                 this.state = 'HOME';
                 this.idleTimer = 0;
                 this.carrying = false;
-                this.speed = 62;
+                this.speed = 65.1;
                 this.nextTask = null;
                 this.targetTruck = null;
                 if (type === 'top') {
@@ -381,48 +392,15 @@
                 this.departureAngle = 0;
             }
             buildPathTo(destX, destY, destAngle) {
-                const path = [];
-                const spineX = STATION_X + 41;
-                const topStationCY = TOP_Y - 72;
-                const botStationCY = BOTTOM_Y + 48;
-                const topParkingLaneY = topParkingY + PARKING_HEIGHT / 2;
-                const botParkingLaneY = bottomParkingY + PARKING_HEIGHT / 2;
-                if (this.type === 'top') {
-                    const destIsStorage = destX < STATION_X;
-                    const destIsParking = destY < TOP_Y - 50 && destX >= STATION_X - 5;
-                    path.push({x: spineX, y: topStationCY});
-                    if (destIsStorage) {
-                        path.push({x: destX, y: topStationCY});
-                        path.push({x: destX, y: destY});
-                    } else if (destIsParking) {
-                        path.push({x: spineX, y: topParkingLaneY});
-                        path.push({x: destX, y: topParkingLaneY});
-                        path.push({x: destX, y: destY});
-                    } else {
-                        path.push({x: destX, y: destY});
-                    }
-                } else {
-                    const destIsStorage = destX > STATION_X + STATION_WIDTH;
-                    const destIsParking = destY > BOTTOM_Y + 90 && destX <= STATION_X + STATION_WIDTH + 5;
-                    path.push({x: spineX, y: botStationCY});
-                    if (destIsStorage) {
-                        path.push({x: destX, y: botStationCY});
-                        path.push({x: destX, y: destY});
-                    } else if (destIsParking) {
-                        path.push({x: spineX, y: botParkingLaneY});
-                        path.push({x: destX, y: botParkingLaneY});
-                        path.push({x: destX, y: destY});
-                    } else {
-                        path.push({x: destX, y: destY});
-                    }
-                }
-                const cleaned = [];
-                for (const p of path) {
-                    if (cleaned.length === 0 || Math.hypot(p.x - cleaned[cleaned.length - 1].x, p.y - cleaned[cleaned.length - 1].y) > 2) cleaned.push(p);
-                }
-                this.path = cleaned;
+                // Direct straight-line travel from current position to destination.
+                this.path = [{x: destX, y: destY}];
                 this.pathIndex = 0;
                 this.departureAngle = destAngle;
+            }
+            stationCenter() {
+                const cx = STATION_X + STATION_WIDTH / 2;
+                const cy = this.type === 'top' ? (TOP_Y - 69) : (BOTTOM_Y + 69);
+                return {x: cx, y: cy};
             }
             update(dt) {
                 if (this.state === 'HOME' || this.state === 'IDLE') {
@@ -436,6 +414,8 @@
                 } else if (this.state === 'WORKING') {
                     this.timer -= dt;
                     if (this.timer <= 0) this.completeWork();
+                } else if (this.state === 'TRANSIT_TO_CENTER') {
+                    if (this.followPath(dt)) this.arriveAtCenter();
                 } else if (this.state === 'GOING_HOME') {
                     if (this.followPath(dt)) {
                         this.x = this.homeX;
@@ -446,6 +426,7 @@
                 }
             }
             findNextTask() {
+                // Route: HOME -> block -> station-center -> dropoff -> station-center -> (next block | home)
                 if (this.type === 'top') {
                     if (topStorageCount >= STORAGE_CAPACITY) { this.goHomeIfNotThere(); return; }
                     for (let t of trucks) {
@@ -462,16 +443,9 @@
                     if (bottomStorageCount <= 0) { this.goHomeIfNotThere(); return; }
                     let hasEmptyTruck = trucks.some(t => t.type === 'bottom' && t.state === 'PARKED' && !t.hasBlock);
                     if (!hasEmptyTruck) { this.goHomeIfNotThere(); return; }
-                    for (let t of trucks) {
-                        if (t.type === 'bottom' && t.state === 'PARKED' && !t.hasBlock) {
-                            this.targetTruck = t;
-                            this.nextTask = 'PICK_STORAGE';
-                            this.buildPathTo(BOTTOM_STORAGE_X + 43, BOTTOM_STORAGE_Y + 24, -Math.PI / 2);
-                            this.state = 'MOVING';
-                            return;
-                        }
-                    }
-                    this.goHomeIfNotThere();
+                    this.nextTask = 'PICK_STORAGE';
+                    this.buildPathTo(BOTTOM_STORAGE_X + STORAGE_WIDTH / 2, BOTTOM_STORAGE_Y + STORAGE_HEIGHT / 2, -Math.PI / 2);
+                    this.state = 'MOVING';
                 }
             }
             goHomeIfNotThere() {
@@ -503,6 +477,41 @@
                 this.state = 'WORKING';
                 this.timer = 0.75;
             }
+            arriveAtCenter() {
+                // Arrived at station-center waypoint; proceed to the next stage of the job.
+                if (this.nextTask === 'GO_TO_DROP_TOP') {
+                    // top forklift: after picking from truck, head to top storage
+                    this.nextTask = 'DROP_STORAGE';
+                    this.buildPathTo(TOP_STORAGE_X + STORAGE_WIDTH / 2, TOP_STORAGE_Y + STORAGE_HEIGHT / 2, Math.PI);
+                    this.state = 'MOVING';
+                } else if (this.nextTask === 'POST_DROP_TOP') {
+                    // after dropping at storage and returning to center: try another pickup
+                    this.nextTask = null;
+                    this.findNextTask();
+                } else if (this.nextTask === 'GO_TO_DROP_BOTTOM') {
+                    // bottom forklift: after picking from storage, head to target truck
+                    if (this.targetTruck && this.targetTruck.state === 'PARKED' && !this.targetTruck.hasBlock) {
+                        this.nextTask = 'DELIVER_TRUCK';
+                        this.buildPathTo(this.targetTruck.x, this.targetTruck.y, -Math.PI / 2);
+                        this.state = 'MOVING';
+                    } else {
+                        // target truck no longer valid; put block back and go home
+                        if (this.carrying) { bottomStorageCount = Math.min(STORAGE_CAPACITY, bottomStorageCount + 1); this.carrying = false; }
+                        this.targetTruck = null;
+                        this.nextTask = null;
+                        this.goHomeIfNotThere();
+                    }
+                } else if (this.nextTask === 'POST_DROP_BOTTOM') {
+                    this.nextTask = null;
+                    this.findNextTask();
+                }
+            }
+            goToCenter(nextTaskAfter) {
+                this.nextTask = nextTaskAfter;
+                const c = this.stationCenter();
+                this.buildPathTo(c.x, c.y, this.homeAngle);
+                this.state = 'TRANSIT_TO_CENTER';
+            }
             completeWork() {
                 if (this.type === 'top') {
                     if (this.nextTask === 'UNLOAD_TRUCK') {
@@ -511,16 +520,13 @@
                             this.carrying = true;
                         }
                         this.targetTruck = null;
-                        this.nextTask = 'DROP_STORAGE';
-                        this.buildPathTo(TOP_STORAGE_X + STORAGE_WIDTH / 2 - 6, TOP_STORAGE_Y + STORAGE_HEIGHT / 2, Math.PI);
-                        this.state = 'MOVING';
+                        // Go to station center, then to storage
+                        this.goToCenter('GO_TO_DROP_TOP');
                     } else if (this.nextTask === 'DROP_STORAGE') {
                         if (this.carrying) topStorageCount = Math.min(STORAGE_CAPACITY, topStorageCount + 1);
                         this.carrying = false;
-                        this.nextTask = null;
-                        this.state = 'IDLE';
-                        this.idleTimer = 0.35;
-                        this.angle = this.departureAngle;
+                        // After drop: go back to station center, then decide next action
+                        this.goToCenter('POST_DROP_TOP');
                     }
                 } else {
                     if (this.nextTask === 'PICK_STORAGE') {
@@ -528,8 +534,9 @@
                             bottomStorageCount--;
                             this.carrying = true;
                         }
+                        // Pick the nearest available empty truck now (will finalize after center waypoint)
                         let truck = null;
-                        let minDist = 999;
+                        let minDist = Infinity;
                         for (let t of trucks) {
                             if (t.type === 'bottom' && t.state === 'PARKED' && !t.hasBlock) {
                                 const d = Math.hypot(t.x - this.x, t.y - this.y);
@@ -538,14 +545,12 @@
                         }
                         if (truck) {
                             this.targetTruck = truck;
-                            this.nextTask = 'DELIVER_TRUCK';
-                            this.buildPathTo(truck.x, truck.y, -Math.PI / 2);
-                            this.state = 'MOVING';
+                            // Route through station center
+                            this.goToCenter('GO_TO_DROP_BOTTOM');
                         } else {
-                            if (this.carrying) { bottomStorageCount++; this.carrying = false; }
-                            this.state = 'IDLE';
-                            this.idleTimer = 0.35;
-                            this.angle = this.departureAngle;
+                            // No truck available anymore; return the block and go home
+                            if (this.carrying) { bottomStorageCount = Math.min(STORAGE_CAPACITY, bottomStorageCount + 1); this.carrying = false; }
+                            this.goToCenter('POST_DROP_BOTTOM');
                         }
                     } else if (this.nextTask === 'DELIVER_TRUCK') {
                         if (this.targetTruck && this.targetTruck.state === 'PARKED' && !this.targetTruck.hasBlock && this.carrying) {
@@ -556,10 +561,7 @@
                         }
                         this.carrying = false;
                         this.targetTruck = null;
-                        this.nextTask = null;
-                        this.state = 'IDLE';
-                        this.idleTimer = 0.35;
-                        this.angle = this.departureAngle;
+                        this.goToCenter('POST_DROP_BOTTOM');
                     }
                 }
             }
@@ -567,13 +569,18 @@
                 ctx.save();
                 ctx.translate(this.x, this.y);
                 ctx.rotate(this.angle);
+                ctx.scale(0.9, 0.9);
+                // Tiny wheels (drawn first so the body sits on top of them, flush with body edges)
+                ctx.fillStyle = '#1c2526';
+                ctx.fillRect(-15, -11, 5, 3); // back-top wheel (1px overlap with body, 2px poke-out)
+                ctx.fillRect(-15, 4, 5, 3);   // back-bottom wheel (1px overlap with body, 2px poke-out)
+                ctx.fillRect(-2, -11, 5, 3);  // front-top wheel
+                ctx.fillRect(-2, 4, 5, 3);    // front-bottom wheel
                 ctx.fillStyle = COLORS.forkliftBody;
-                ctx.fillRect(-18, -9, 22, 14);
-                ctx.fillStyle = '#222';
-                ctx.fillRect(-4, -13, 12, 8);
+                ctx.fillRect(-16, -9, 22, 14);
                 ctx.fillStyle = COLORS.forkliftForks;
-                ctx.fillRect(4, -11, 14, 3);
-                ctx.fillRect(4, 4, 14, 3);
+                ctx.fillRect(5, -10, 14, 3);
+                ctx.fillRect(5, 3, 14, 3);
                 if (this.carrying) {
                     ctx.fillStyle = COLORS.quarryMain;
                     ctx.fillRect(12, -10, 13, 13);
@@ -976,7 +983,8 @@
             ctx.setLineDash([5, 5]);
             ctx.strokeStyle = '#e0e0e0';
             ctx.lineWidth = 3;
-            ctx.strokeRect(STATION_X + 18, TOP_Y - 88, 46, 32);
+            // Top forklift dashed parking box: centered on sprite visual center (offset +1.8, +1.35 from anchor)
+            ctx.strokeRect(TOP_FORKLIFT_HOME_X - 10, TOP_FORKLIFT_HOME_Y - 18, 24, 38);
             ctx.fillStyle = COLORS.stationPlatform;
             ctx.fillRect(STATION_X, BOTTOM_Y + 4, STATION_WIDTH, 26);
             ctx.fillStyle = COLORS.stationBuilding;
@@ -990,7 +998,8 @@
                 ctx.lineTo(parkingX + i * spotSpacing, lineY + lineHeight);
                 ctx.stroke();
             }
-            ctx.strokeRect(STATION_X + 18, BOTTOM_Y + 32, 46, 32);
+            // Bottom forklift dashed parking box: centered on sprite visual center (offset -1.8, -1.35 from anchor)
+            ctx.strokeRect(BOTTOM_FORKLIFT_HOME_X - 14, BOTTOM_FORKLIFT_HOME_Y - 20, 24, 38);
             ctx.setLineDash([]);
         }
         function drawStorages() {
@@ -1143,7 +1152,6 @@
             ctx.fillStyle = COLORS.grass;
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
             drawRoads();
-            drawForkliftPaths();
             drawQuarryBlocks();
             drawStations();
             drawStorages();
