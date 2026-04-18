@@ -66,12 +66,16 @@
         let trainBlocks = [false, false, false, false, false];
         // Quarry settings
         const BLOCK_SIZE = 18;
-        const QUARRY_MAX_ROWS = 17;
-        const BOTTOM_QUARRY_MAX_ROWS = 17;
+        const QUARRY_MAX_ROWS = 18;
+        const BOTTOM_QUARRY_MAX_ROWS = 18;          // now matches top for perfect symmetry
         const QUARRY_OFFSET_X = 12;
         const QUARRY_OFFSET_Y = TOP_ROAD_Y - 81;
         const BOTTOM_QUARRY_OFFSET_X = WIDTH - 12 - BLOCK_SIZE;
         const BOTTOM_QUARRY_OFFSET_Y = BOTTOM_ROAD_Y + 45;
+
+        // PERMANENT TOP QUARRY LAYOUT (your favourite design – locked forever)
+        const TOP_QUARRY_COLS_PER_ROW = [18, 19, 19, 18, 17, 18, 17, 16, 15, 15, 14, 13, 12, 12, 11, 10, 9, 4];
+
         // Colors
         const COLORS = {
             grass: '#2e8b57', trackBed: '#2c2c2c', rail: '#e8e8e8',
@@ -94,51 +98,67 @@
         const TOP_FORKLIFT_HOME_Y = TOP_Y - 72;
         const BOTTOM_FORKLIFT_HOME_X = STATION_X + 41;
         const BOTTOM_FORKLIFT_HOME_Y = BOTTOM_Y + 48;
-        // Road coordinates used by trucks (defined BEFORE classes)
+        // Road coordinates used by trucks
         const topRow4Y = TOP_ROAD_Y;
-        const topRow12Y = QUARRY_OFFSET_Y + 12 * BLOCK_SIZE + 9;
-        const topCol4X = QUARRY_OFFSET_X + 4 * BLOCK_SIZE + 9;
-        const topCol14X = QUARRY_OFFSET_X + 14 * BLOCK_SIZE + 9;
+        const topRow14Y = QUARRY_OFFSET_Y + 14 * BLOCK_SIZE + 9;
+        const topMiddleRowY = QUARRY_OFFSET_Y + 9 * BLOCK_SIZE + 9;
+        const topCol3X = QUARRY_OFFSET_X + 3 * BLOCK_SIZE + 9;
+        const topCol13X = QUARRY_OFFSET_X + 13 * BLOCK_SIZE + 9;
         const botRow3Y = BOTTOM_ROAD_Y;
         const botRow11Y = BOTTOM_QUARRY_OFFSET_Y - 11 * BLOCK_SIZE + 9;
+        const botMiddleRowY = BOTTOM_QUARRY_OFFSET_Y - 7 * BLOCK_SIZE + 9;   // mirrored middle shortcut
         const botCol4X = BOTTOM_QUARRY_OFFSET_X - 4 * BLOCK_SIZE + 9;
         const botCol14X = BOTTOM_QUARRY_OFFSET_X - 14 * BLOCK_SIZE + 9;
+
         function isTopRoadBlock(row, col) {
-            if (row === 4 && col >= 4) return true;
-            if (row === 12 && col >= 4 && col <= 14) return true;
-            if (col === 4 && row >= 4 && row <= 12) return true;
-            if (col === 14 && row >= 4 && row <= 12) return true;
+            if (row === 4 && col >= 3) return true;
+            if (row === 14 && col >= 3 && col <= 13) return true;
+            if (row === 9 && col >= 3 && col <= 13) return true;
+            if (col === 3 && row >= 4 && row <= 14) return true;
+            if (col === 13 && row >= 4 && row <= 14) return true;
             return false;
         }
+
+        // MIRRORED road carving for bottom quarry (exact visual reflection of top)
         function isBottomRoadBlock(row, col) {
             if (row === 3 && col >= 4) return true;
             if (row === 11 && col >= 4 && col <= 14) return true;
+            if (row === 7 && col >= 4 && col <= 14) return true;   // middle shortcut (mirrored)
             if (col === 4 && row >= 3 && row <= 11) return true;
             if (col === 14 && row >= 3 && row <= 11) return true;
             return false;
         }
+
         function initSim() {
             topBlocks.length = 0;
             bottomBlocks.length = 0;
             trucks.length = 0;
             forklifts.length = 0;
             cranes.length = 0;
-            // Build Top Quarry – increased ~15% blocks, removed top-row spill (now aligns with row below)
+
+            // Build Top Quarry – permanent exact layout
             for (let row = 0; row < QUARRY_MAX_ROWS; row++) {
-                let numCols = Math.max(4, 18 - Math.floor(row * 0.9));   // base widened to 18, no special wide row=0
+                const numCols = TOP_QUARRY_COLS_PER_ROW[row];
                 for (let col = 0; col < numCols; col++) {
                     if (isTopRoadBlock(row, col)) continue;
                     topBlocks.push({ x: QUARRY_OFFSET_X + col * BLOCK_SIZE, y: QUARRY_OFFSET_Y + row * BLOCK_SIZE, active: true });
                 }
             }
-            // Build Bottom Quarry – increased ~15% blocks, removed bottom-row spill (now aligns with row above)
+
+            // Build Bottom Quarry – EXACT MIRRORED copy of top quarry + top road design
+            // (same column-per-row profile, flipped placement direction, mirrored road carving)
             for (let row = 0; row < BOTTOM_QUARRY_MAX_ROWS; row++) {
-                let numCols = Math.max(4, 18 - Math.floor(row * 0.9));   // base widened to 18, no special wide row=0
+                const numCols = TOP_QUARRY_COLS_PER_ROW[row];
                 for (let col = 0; col < numCols; col++) {
                     if (isBottomRoadBlock(row, col)) continue;
-                    bottomBlocks.push({ x: BOTTOM_QUARRY_OFFSET_X - col * BLOCK_SIZE, y: BOTTOM_QUARRY_OFFSET_Y - row * BLOCK_SIZE, active: false });
+                    bottomBlocks.push({ 
+                        x: BOTTOM_QUARRY_OFFSET_X - col * BLOCK_SIZE, 
+                        y: BOTTOM_QUARRY_OFFSET_Y - row * BLOCK_SIZE, 
+                        active: false 
+                    });
                 }
             }
+
             for (let i = 0; i < 5; i++) {
                 trucks.push(new Truck('top', i));
                 trucks.push(new Truck('bottom', i));
@@ -150,6 +170,7 @@
             forklifts = [new Forklift('top'), new Forklift('bottom')];
             cranes = [new Crane('top'), new Crane('bottom')];
         }
+
         class Truck {
             constructor(type, index) {
                 this.type = type;
@@ -185,15 +206,50 @@
                             }
                             if (this.type === 'bottom' && !this.hasBlock) { this.timer = 0.8; return; }
                             this.state = 'DRIVING';
-                            this.route = this.type === 'top' ? [
-                                {x: topCol14X, y: topRow4Y}, {x: topCol4X, y: topRow4Y},
-                                {x: topCol4X, y: topRow12Y}, {x: topCol14X, y: topRow12Y},
-                                {x: topCol14X, y: topRow4Y}, {x: this.parkX, y: this.parkY}
-                            ] : [
-                                {x: botCol14X, y: botRow3Y}, {x: botCol4X, y: botRow3Y},
-                                {x: botCol4X, y: botRow11Y}, {x: botCol14X, y: botRow11Y},
-                                {x: botCol14X, y: botRow3Y}, {x: this.parkX, y: this.parkY}
-                            ];
+                            if (this.type === 'top') {
+                                const useShortcut = Math.random() < 0.5;
+                                if (useShortcut) {
+                                    this.route = [
+                                        {x: topCol13X, y: topRow4Y},
+                                        {x: topCol3X, y: topRow4Y},
+                                        {x: topCol3X, y: topMiddleRowY},
+                                        {x: topCol13X, y: topMiddleRowY},
+                                        {x: topCol13X, y: topRow4Y},
+                                        {x: this.parkX, y: this.parkY}
+                                    ];
+                                } else {
+                                    this.route = [
+                                        {x: topCol13X, y: topRow4Y},
+                                        {x: topCol3X, y: topRow4Y},
+                                        {x: topCol3X, y: topRow14Y},
+                                        {x: topCol13X, y: topRow14Y},
+                                        {x: topCol13X, y: topRow4Y},
+                                        {x: this.parkX, y: this.parkY}
+                                    ];
+                                }
+                            } else {
+                                // MIRRORED bottom route (now has random shortcut just like top)
+                                const useShortcut = Math.random() < 0.5;
+                                if (useShortcut) {
+                                    this.route = [
+                                        {x: botCol14X, y: botRow3Y},
+                                        {x: botCol4X, y: botRow3Y},
+                                        {x: botCol4X, y: botMiddleRowY},
+                                        {x: botCol14X, y: botMiddleRowY},
+                                        {x: botCol14X, y: botRow3Y},
+                                        {x: this.parkX, y: this.parkY}
+                                    ];
+                                } else {
+                                    this.route = [
+                                        {x: botCol14X, y: botRow3Y},
+                                        {x: botCol4X, y: botRow3Y},
+                                        {x: botCol4X, y: botRow11Y},
+                                        {x: botCol14X, y: botRow11Y},
+                                        {x: botCol14X, y: botRow3Y},
+                                        {x: this.parkX, y: this.parkY}
+                                    ];
+                                }
+                            }
                             this.routeIndex = 0;
                             this.targetX = this.route[0].x;
                             this.targetY = this.route[0].y;
@@ -830,37 +886,61 @@
             ctx.lineCap = 'square';
             ctx.strokeStyle = COLORS.parkingAsphalt;
             ctx.lineWidth = 20;
+            // Top road (unchanged)
             ctx.beginPath();
             ctx.moveTo(parkingX + PARKING_WIDTH - 10, TOP_ROAD_Y);
-            ctx.lineTo(topCol4X, TOP_ROAD_Y);
-            ctx.lineTo(topCol4X, topRow12Y);
-            ctx.lineTo(topCol14X, topRow12Y);
-            ctx.lineTo(topCol14X, TOP_ROAD_Y);
+            ctx.lineTo(topCol3X, TOP_ROAD_Y);
+            ctx.lineTo(topCol3X, topRow14Y);
+            ctx.lineTo(topCol13X, topRow14Y);
+            ctx.lineTo(topCol13X, TOP_ROAD_Y);
             ctx.stroke();
+            // Middle island shortcut (top)
             ctx.beginPath();
-            ctx.moveTo(parkingX + 10, BOTTOM_ROAD_Y);
-            ctx.lineTo(botCol4X, BOTTOM_ROAD_Y);
+            ctx.moveTo(topCol3X, topMiddleRowY);
+            ctx.lineTo(topCol13X, topMiddleRowY);
+            ctx.stroke();
+
+            // Bottom road – MIRRORED exact copy of top road design
+            ctx.beginPath();
+            ctx.moveTo(parkingX + 10, botRow3Y);
+            ctx.lineTo(botCol4X, botRow3Y);
             ctx.lineTo(botCol4X, botRow11Y);
             ctx.lineTo(botCol14X, botRow11Y);
-            ctx.lineTo(botCol14X, BOTTOM_ROAD_Y);
+            ctx.lineTo(botCol14X, botRow3Y);
             ctx.stroke();
+            // Middle island shortcut (bottom – mirrored)
+            ctx.beginPath();
+            ctx.moveTo(botCol4X, botMiddleRowY);
+            ctx.lineTo(botCol14X, botMiddleRowY);
+            ctx.stroke();
+
             ctx.strokeStyle = COLORS.parkingLine;
             ctx.lineWidth = 2;
             ctx.setLineDash([8, 8]);
             ctx.beginPath();
             ctx.moveTo(parkingX, TOP_ROAD_Y);
-            ctx.lineTo(topCol4X, TOP_ROAD_Y);
-            ctx.lineTo(topCol4X, topRow12Y);
-            ctx.lineTo(topCol14X, topRow12Y);
-            ctx.lineTo(topCol14X, TOP_ROAD_Y);
+            ctx.lineTo(topCol3X, TOP_ROAD_Y);
+            ctx.lineTo(topCol3X, topRow14Y);
+            ctx.lineTo(topCol13X, topRow14Y);
+            ctx.lineTo(topCol13X, TOP_ROAD_Y);
             ctx.stroke();
             ctx.beginPath();
-            ctx.moveTo(parkingX + PARKING_WIDTH, BOTTOM_ROAD_Y);
-            ctx.lineTo(botCol4X, BOTTOM_ROAD_Y);
+            ctx.moveTo(topCol3X, topMiddleRowY);
+            ctx.lineTo(topCol13X, topMiddleRowY);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(parkingX + PARKING_WIDTH, botRow3Y);
+            ctx.lineTo(botCol4X, botRow3Y);
             ctx.lineTo(botCol4X, botRow11Y);
             ctx.lineTo(botCol14X, botRow11Y);
-            ctx.lineTo(botCol14X, BOTTOM_ROAD_Y);
+            ctx.lineTo(botCol14X, botRow3Y);
             ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(botCol4X, botMiddleRowY);
+            ctx.lineTo(botCol14X, botMiddleRowY);
+            ctx.stroke();
+
             ctx.setLineDash([]);
             ctx.lineJoin = 'miter';
             ctx.lineCap = 'butt';
