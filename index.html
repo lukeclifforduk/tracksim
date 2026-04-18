@@ -592,7 +592,8 @@
                 this.pivotY = this.baseY - 82;
                 this.minLength = 28;
                 this.maxLength = 160;
-                this.defaultAngle = this.normalizeAngle(type === 'top' ? Math.PI * 0.6 : Math.PI * 1.4);
+                // Default: arm hangs straight down from pivot (6 o'clock), parallel to the mast
+                this.defaultAngle = Math.PI / 2;
                 this.currentAngle = this.defaultAngle;
                 this.currentLength = this.minLength;
                 this.targetAngle = this.defaultAngle;
