@@ -117,6 +117,45 @@
             t = Math.max(0, Math.min(1, t));
             return { x: ax + t * dx, y: ay + t * dy };
         }
+        // Helper: closest point on the top-quarry road network to a given (px, py).
+        function closestRoadPointTop(px, py) {
+            const segments = [
+                [topCol3X, topRow4Y, topCol13X, topRow4Y],
+                [topCol3X, topMiddleRowY, topCol13X, topMiddleRowY],
+                [topCol3X, topRow14Y, topCol13X, topRow14Y],
+                [topCol3X, topRow4Y, topCol3X, topRow14Y],
+                [topCol13X, topRow4Y, topCol13X, topRow14Y]
+            ];
+            let best = null, bestDist = Infinity;
+            for (const s of segments) {
+                const cp = closestPointOnSegment(px, py, s[0], s[1], s[2], s[3]);
+                const d = Math.hypot(cp.x - px, cp.y - py);
+                if (d < bestDist) { bestDist = d; best = cp; }
+            }
+            return best;
+        }
+        // Helper: build a road-following path on the top-quarry road network.
+        function buildTopRoadPath(sx, sy, ex, ey) {
+            const eps = 1.5;
+            const onTopRow = y => Math.abs(y - topRow4Y) < eps;
+            const onMidRow = y => Math.abs(y - topMiddleRowY) < eps;
+            const onBotRow = y => Math.abs(y - topRow14Y) < eps;
+            const onLeftCol = x => Math.abs(x - topCol3X) < eps;
+            const onRightCol = x => Math.abs(x - topCol13X) < eps;
+            if (Math.abs(sx - ex) < eps && Math.abs(sy - ey) < eps) return [];
+            const sameRow = (onTopRow(sy) && onTopRow(ey)) ||
+                            (onMidRow(sy) && onMidRow(ey)) ||
+                            (onBotRow(sy) && onBotRow(ey));
+            const sameCol = (onLeftCol(sx) && onLeftCol(ex)) ||
+                            (onRightCol(sx) && onRightCol(ex));
+            if (sameRow) return [{ x: ex, y: ey }];
+            if (sameCol) return [{ x: ex, y: ey }];
+            const startCol = onLeftCol(sx) ? topCol3X : (onRightCol(sx) ? topCol13X : null);
+            const endCol = onLeftCol(ex) ? topCol3X : (onRightCol(ex) ? topCol13X : null);
+            if (startCol !== null) return [{ x: startCol, y: ey }, { x: ex, y: ey }];
+            if (endCol !== null) return [{ x: endCol, y: sy }, { x: ex, y: ey }];
+            return [{ x: ex, y: ey }];
+        }
         // Helper: closest point on the bottom-quarry road network to a given (px, py).
         // Road network = rectangle (top/bottom rows + left/right columns) + middle crossbar.
         function closestRoadPointBottom(px, py) {
@@ -135,6 +174,61 @@
                 if (d < bestDist) { bestDist = d; best = cp; }
             }
             return best;
+        }
+        // Helper: build a road-following path on the bottom-quarry road network
+        // from (sx, sy) — assumed to be on the road — to (ex, ey) — also on the road.
+        // Returns an array of waypoints (excluding the start point, including the end).
+        // The road network is a rectangle with a middle horizontal crossbar. We route
+        // via the right column if both start and end are reachable by it, else via
+        // the left column. When the end point is on the middle crossbar we drop down
+        // the nearer vertical column to the crossbar's y, then across to the end.
+        function buildBottomRoadPath(sx, sy, ex, ey) {
+            const eps = 1.5;
+            const onTopRow = y => Math.abs(y - botRow4Y) < eps;
+            const onMidRow = y => Math.abs(y - botMiddleRowY) < eps;
+            const onBotRow = y => Math.abs(y - botRow14Y) < eps;
+            const onLeftCol = x => Math.abs(x - botCol3X) < eps;
+            const onRightCol = x => Math.abs(x - botCol13X) < eps;
+
+            // Degenerate case: already there
+            if (Math.abs(sx - ex) < eps && Math.abs(sy - ey) < eps) return [];
+
+            // Helper: are points on the same horizontal row?
+            const sameRow = onTopRow(sy) && onTopRow(ey) ||
+                            onMidRow(sy) && onMidRow(ey) ||
+                            onBotRow(sy) && onBotRow(ey);
+            // Helper: are points on the same vertical column?
+            const sameCol = onLeftCol(sx) && onLeftCol(ex) ||
+                            onRightCol(sx) && onRightCol(ex);
+
+            if (sameRow) return [{ x: ex, y: ey }];
+            if (sameCol) return [{ x: ex, y: ey }];
+
+            // General case: L-shaped route via the nearer vertical column.
+            // If the destination is on top/mid/bot row, we need to get onto that row first.
+            // Pick the column (left or right) whose x-coord is closer to the start, so
+            // the truck follows the column it's already on (the truck is always on a
+            // corner when this is called in the safety-net scenario).
+            const startCol = onLeftCol(sx) ? botCol3X : (onRightCol(sx) ? botCol13X : null);
+            const endCol = onLeftCol(ex) ? botCol3X : (onRightCol(ex) ? botCol13X : null);
+
+            // If start is on a column, go along that column to the end's row, then across.
+            if (startCol !== null) {
+                return [
+                    { x: startCol, y: ey },
+                    { x: ex, y: ey }
+                ];
+            }
+            // If start is on a row and end is on a column, go along row to that column then down/up.
+            if (endCol !== null) {
+                return [
+                    { x: endCol, y: sy },
+                    { x: ex, y: ey }
+                ];
+            }
+            // Both points lie mid-segment on rows (not a typical case for our use).
+            // Fall back to direct.
+            return [{ x: ex, y: ey }];
         }
         function isTopRoadBlock(row, col) {
             if (row === 4 && col >= 3) return true;
@@ -211,6 +305,7 @@
                 this.hasBlock = false;
                 this.depositTarget = null;
                 this.safetyNetTarget = null;
+                this.safetyNetTriggerIndex = -1;
                 this.speed = 61.75;
             }
             update(dt) {
@@ -275,9 +370,22 @@
                     case 'DRIVING':
                         if (this.moveToTarget(dt)) {
                             // If this is the bottom truck's safety-net detour waypoint, deposit here instead of advancing normally.
-                            if (this.type === 'bottom' && this.hasBlock && this.safetyNetTarget) {
+                            if (this.type === 'bottom' && this.hasBlock && this.safetyNetTarget &&
+                                this.routeIndex === this.safetyNetTriggerIndex) {
                                 this.depositTarget = this.safetyNetTarget;
                                 this.safetyNetTarget = null;
+                                this.safetyNetTriggerIndex = -1;
+                                this.state = 'LOADING';
+                                this.timer = 1.0;
+                                break;
+                            }
+                            // If this is the top truck's safety-net detour waypoint, pick up the reserved block here.
+                            if (this.type === 'top' && !this.hasBlock && this.safetyNetTarget &&
+                                this.routeIndex === this.safetyNetTriggerIndex) {
+                                // Block was already reserved (active=false) at safety-net trigger time.
+                                this.hasBlock = true;
+                                this.safetyNetTarget = null;
+                                this.safetyNetTriggerIndex = -1;
                                 this.state = 'LOADING';
                                 this.timer = 1.0;
                                 break;
@@ -296,16 +404,64 @@
                                     if (d < nearestDist) { nearestDist = d; nearest = b; }
                                 }
                                 if (nearest) {
+                                    // Reserve immediately so no other truck can pick the same block this tick.
+                                    nearest.active = true;
                                     const targetCx = nearest.x + BLOCK_SIZE / 2;
                                     const targetCy = nearest.y + BLOCK_SIZE / 2;
                                     const rp = closestRoadPointBottom(targetCx, targetCy);
-                                    // Rebuild route: [detour waypoint, home]. Mark detour waypoint as the safety-net drop spot.
+                                    // Build a road-following path from the truck's current position to the detour waypoint,
+                                    // then from the detour waypoint back to the quarry exit corner (botCol13X, botRow4Y),
+                                    // then the original home waypoint. This prevents the truck from cutting across grass.
+                                    const pathToDetour = buildBottomRoadPath(this.x, this.y, rp.x, rp.y);
+                                    const pathToExit = buildBottomRoadPath(rp.x, rp.y, botCol13X, botRow4Y);
                                     const homeWp = this.route[this.route.length - 1];
-                                    this.route = [{ x: rp.x, y: rp.y }, homeWp];
+                                    const newRoute = [];
+                                    if (pathToDetour.length) newRoute.push(...pathToDetour);
+                                    else newRoute.push({ x: rp.x, y: rp.y });
+                                    if (pathToExit.length) newRoute.push(...pathToExit);
+                                    newRoute.push(homeWp);
+                                    this.route = newRoute;
+                                    this.routeIndex = 0;
+                                    this.targetX = this.route[0].x;
+                                    this.targetY = this.route[0].y;
+                                    // Safety-net deposit fires on arrival at the detour waypoint.
+                                    this.safetyNetTarget = nearest;
+                                    this.safetyNetTriggerIndex = Math.max(0, (pathToDetour.length || 1) - 1);
+                                    break;
+                                }
+                            }
+                            // Safety net for top trucks: about to advance onto the final home leg while still empty.
+                            // Route via the closest top-road point to the nearest active block, pick up, then head home.
+                            if (this.type === 'top' && !this.hasBlock && this.routeIndex === this.route.length - 1) {
+                                let nearest = null;
+                                let nearestDist = Infinity;
+                                for (const b of topBlocks) {
+                                    if (!b.active) continue;
+                                    const cx = b.x + BLOCK_SIZE / 2;
+                                    const cy = b.y + BLOCK_SIZE / 2;
+                                    const d = Math.hypot(cx - this.x, cy - this.y);
+                                    if (d < nearestDist) { nearestDist = d; nearest = b; }
+                                }
+                                if (nearest) {
+                                    // Reserve immediately (mark inactive) so no other truck picks the same block this tick.
+                                    nearest.active = false;
+                                    const targetCx = nearest.x + BLOCK_SIZE / 2;
+                                    const targetCy = nearest.y + BLOCK_SIZE / 2;
+                                    const rp = closestRoadPointTop(targetCx, targetCy);
+                                    const pathToDetour = buildTopRoadPath(this.x, this.y, rp.x, rp.y);
+                                    const pathToExit = buildTopRoadPath(rp.x, rp.y, topCol13X, topRow4Y);
+                                    const homeWp = this.route[this.route.length - 1];
+                                    const newRoute = [];
+                                    if (pathToDetour.length) newRoute.push(...pathToDetour);
+                                    else newRoute.push({ x: rp.x, y: rp.y });
+                                    if (pathToExit.length) newRoute.push(...pathToExit);
+                                    newRoute.push(homeWp);
+                                    this.route = newRoute;
                                     this.routeIndex = 0;
                                     this.targetX = this.route[0].x;
                                     this.targetY = this.route[0].y;
                                     this.safetyNetTarget = nearest;
+                                    this.safetyNetTriggerIndex = Math.max(0, (pathToDetour.length || 1) - 1);
                                     break;
                                 }
                             }
@@ -332,29 +488,27 @@
                             }
                             if (candidates.length > 0) {
                                 const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+                                // Reserve immediately so no other truck can pick the same block this tick.
+                                chosen.active = true;
                                 this.depositTarget = chosen;
                                 this.state = 'LOADING';
                                 this.timer = 1.0;
                             }
                         }
-                        if (this.type === 'top' && !this.hasBlock && this.routeIndex >= 1 && this.routeIndex <= 4) {
-                            this.scanTimer -= dt;
-                            if (this.scanTimer <= 0) {
-                                this.scanTimer = 0.2;
-                                let closest = null;
-                                let minDist = 120;
-                                for (let b of topBlocks) {
-                                    if (b.active) {
-                                        const dist = Math.hypot(b.x + BLOCK_SIZE/2 - this.x, b.y + BLOCK_SIZE/2 - this.y);
-                                        if (dist <= minDist) { minDist = dist; closest = b; }
-                                    }
-                                }
-                                if (closest) {
-                                    closest.active = false;
-                                    this.hasBlock = true;
-                                    this.state = 'LOADING';
-                                    this.timer = 1.0;
-                                }
+                        if (this.type === 'top' && !this.hasBlock && this.routeIndex < this.route.length - 1) {
+                            const candidates = [];
+                            for (const b of topBlocks) {
+                                if (!b.active) continue;
+                                const dist = Math.hypot((b.x + BLOCK_SIZE / 2) - this.x, (b.y + BLOCK_SIZE / 2) - this.y);
+                                if (dist <= 5 * BLOCK_SIZE) candidates.push(b);
+                            }
+                            if (candidates.length > 0) {
+                                const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+                                // Reserve immediately so no other truck picks the same block this tick.
+                                chosen.active = false;
+                                this.hasBlock = true;
+                                this.state = 'LOADING';
+                                this.timer = 1.0;
                             }
                         }
                         break;
