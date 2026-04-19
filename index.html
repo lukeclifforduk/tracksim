@@ -29,9 +29,9 @@
         const TOTAL_TRACK_LENGTH = 2 * STRAIGHT_LENGTH + 2 * Math.PI * CURVE_RADIUS;
         // Train & carriage dimensions
         const TRAIN_LENGTH = 42;
-        const TRAIN_WIDTH = 20;
+        const TRAIN_WIDTH = 18;
         const CARRIAGE_LENGTH = 26;
-        const CARRIAGE_WIDTH = 22;
+        const CARRIAGE_WIDTH = 20;
         const CARRIAGE_SEPARATION = 36;
         // Train Speed and State
         let baseSpeed = 265;
@@ -1037,7 +1037,7 @@
             }
         }
         function drawRails() {
-            ctx.lineWidth = 28;
+            ctx.lineWidth = 26;
             ctx.strokeStyle = COLORS.trackBed;
             ctx.beginPath();
             ctx.moveTo(LEFT_CX, TOP_Y);
@@ -1049,58 +1049,62 @@
             ctx.lineWidth = 4;
             ctx.strokeStyle = COLORS.rail;
             ctx.beginPath();
-            ctx.moveTo(LEFT_CX, TOP_Y - 9);
-            ctx.lineTo(RIGHT_CX, TOP_Y - 9);
-            ctx.moveTo(LEFT_CX, TOP_Y + 9);
-            ctx.lineTo(RIGHT_CX, TOP_Y + 9);
+            ctx.moveTo(LEFT_CX, TOP_Y - 8);
+            ctx.lineTo(RIGHT_CX, TOP_Y - 8);
+            ctx.moveTo(LEFT_CX, TOP_Y + 8);
+            ctx.lineTo(RIGHT_CX, TOP_Y + 8);
             ctx.stroke();
             ctx.beginPath();
-            ctx.moveTo(RIGHT_CX, BOTTOM_Y - 9);
-            ctx.lineTo(LEFT_CX, BOTTOM_Y - 9);
-            ctx.moveTo(RIGHT_CX, BOTTOM_Y + 9);
-            ctx.lineTo(LEFT_CX, BOTTOM_Y + 9);
+            ctx.moveTo(RIGHT_CX, BOTTOM_Y - 8);
+            ctx.lineTo(LEFT_CX, BOTTOM_Y - 8);
+            ctx.moveTo(RIGHT_CX, BOTTOM_Y + 8);
+            ctx.lineTo(LEFT_CX, BOTTOM_Y + 8);
             ctx.stroke();
             ctx.beginPath();
-            ctx.arc(RIGHT_CX, CENTER_Y, CURVE_RADIUS - 9, -Math.PI / 2, Math.PI / 2);
+            ctx.arc(RIGHT_CX, CENTER_Y, CURVE_RADIUS - 8, -Math.PI / 2, Math.PI / 2);
             ctx.stroke();
             ctx.beginPath();
-            ctx.arc(RIGHT_CX, CENTER_Y, CURVE_RADIUS + 9, -Math.PI / 2, Math.PI / 2);
+            ctx.arc(RIGHT_CX, CENTER_Y, CURVE_RADIUS + 8, -Math.PI / 2, Math.PI / 2);
             ctx.stroke();
             ctx.beginPath();
-            ctx.arc(LEFT_CX, CENTER_Y, CURVE_RADIUS - 9, Math.PI / 2, 3 * Math.PI / 2);
+            ctx.arc(LEFT_CX, CENTER_Y, CURVE_RADIUS - 8, Math.PI / 2, 3 * Math.PI / 2);
             ctx.stroke();
             ctx.beginPath();
-            ctx.arc(LEFT_CX, CENTER_Y, CURVE_RADIUS + 9, Math.PI / 2, 3 * Math.PI / 2);
+            ctx.arc(LEFT_CX, CENTER_Y, CURVE_RADIUS + 8, Math.PI / 2, 3 * Math.PI / 2);
             ctx.stroke();
         }
         function drawEngine(x, y, angle) {
             ctx.save();
             ctx.translate(x, y);
             ctx.rotate(angle);
+            // Wheels drawn first so the body overlaps their inner portion.
+            // Body half-width = 9; wheels span y = -12..-4 and y = 4..12 (3px under body, 3px poke-out).
+            ctx.fillStyle = COLORS.engineWheel;
+            ctx.fillRect(-17, -12, 9, 6);
+            ctx.fillRect(6, -12, 9, 6);
+            ctx.fillRect(-17, 6, 9, 6);
+            ctx.fillRect(6, 6, 9, 6);
             ctx.fillStyle = COLORS.engineBody;
             ctx.fillRect(-TRAIN_LENGTH / 2, -TRAIN_WIDTH / 2, TRAIN_LENGTH, TRAIN_WIDTH);
             ctx.fillStyle = COLORS.engineFront;
             ctx.fillRect(TRAIN_LENGTH / 2 - 11, -TRAIN_WIDTH / 2 + 2, 11, TRAIN_WIDTH - 4);
-            ctx.fillStyle = COLORS.engineWheel;
-            ctx.fillRect(-17, -10, 9, 6);
-            ctx.fillRect(6, -10, 9, 6);
-            ctx.fillRect(-17, 4, 9, 6);
-            ctx.fillRect(6, 4, 9, 6);
             ctx.restore();
         }
         function drawCarriage(x, y, angle, hasBlock) {
             ctx.save();
             ctx.translate(x, y);
             ctx.rotate(angle);
+            // Wheels drawn first so the body overlaps their inner portion.
+            // Body half-width = 10; wheels span y = -13..-8 and y = 8..13 (2px under body, 3px poke-out).
+            ctx.fillStyle = COLORS.carriageWheel;
+            ctx.fillRect(-CARRIAGE_LENGTH / 2 + 6, -13, 8, 5);
+            ctx.fillRect(CARRIAGE_LENGTH / 2 - 14, -13, 8, 5);
+            ctx.fillRect(-CARRIAGE_LENGTH / 2 + 6, 8, 8, 5);
+            ctx.fillRect(CARRIAGE_LENGTH / 2 - 14, 8, 8, 5);
             ctx.fillStyle = COLORS.carriageBody;
             ctx.fillRect(-CARRIAGE_LENGTH / 2, -CARRIAGE_WIDTH / 2, CARRIAGE_LENGTH, CARRIAGE_WIDTH);
             ctx.fillStyle = COLORS.carriageInner;
             ctx.fillRect(-(CARRIAGE_LENGTH - 7) / 2, -(CARRIAGE_WIDTH - 5) / 2, CARRIAGE_LENGTH - 7, CARRIAGE_WIDTH - 5);
-            ctx.fillStyle = COLORS.carriageWheel;
-            ctx.fillRect(-CARRIAGE_LENGTH / 2 + 6, -10, 8, 5);
-            ctx.fillRect(CARRIAGE_LENGTH / 2 - 14, -10, 8, 5);
-            ctx.fillRect(-CARRIAGE_LENGTH / 2 + 6, 5, 8, 5);
-            ctx.fillRect(CARRIAGE_LENGTH / 2 - 14, 5, 8, 5);
             if (hasBlock) {
                 ctx.fillStyle = COLORS.quarryMain;
                 ctx.fillRect(-9, -9, 13, 13);
