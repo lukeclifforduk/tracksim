@@ -1182,11 +1182,14 @@ if (!topBlocks.some(b => b.active)) {
             ctx.fillRect(parkingX, topParkingY, PARKING_WIDTH, PARKING_HEIGHT);
             ctx.strokeStyle = COLORS.parkingLine;
             ctx.lineWidth = 3;
-            let lineY = topParkingY + (PARKING_HEIGHT - lineHeight) / 2;
+            // Extend lines from their original top down to the asphalt edge nearest the train station.
+            // Top parking sits above the station, so lines extend downward to the bottom edge of the asphalt.
+            let lineTopY = topParkingY + (PARKING_HEIGHT - lineHeight) / 2;
+            let lineBotY = topParkingY + PARKING_HEIGHT;
             for (let i = 1; i < 5; i++) {
                 ctx.beginPath();
-                ctx.moveTo(parkingX + i * spotSpacing, lineY);
-                ctx.lineTo(parkingX + i * spotSpacing, lineY + lineHeight);
+                ctx.moveTo(parkingX + i * spotSpacing, lineTopY);
+                ctx.lineTo(parkingX + i * spotSpacing, lineBotY);
                 ctx.stroke();
             }
             ctx.setLineDash([5, 5]);
@@ -1200,11 +1203,13 @@ if (!topBlocks.some(b => b.active)) {
             ctx.fillRect(STATION_X, BOTTOM_Y + 4 + 26, STATION_WIDTH, 78);
             ctx.fillStyle = COLORS.parkingAsphalt;
             ctx.fillRect(parkingX, bottomParkingY, PARKING_WIDTH, PARKING_HEIGHT);
-            lineY = bottomParkingY + (PARKING_HEIGHT - lineHeight) / 2;
+            // Bottom parking sits below the station, so lines extend upward to the top edge of the asphalt.
+            lineTopY = bottomParkingY;
+            lineBotY = bottomParkingY + (PARKING_HEIGHT - lineHeight) / 2 + lineHeight;
             for (let i = 1; i < 5; i++) {
                 ctx.beginPath();
-                ctx.moveTo(parkingX + i * spotSpacing, lineY);
-                ctx.lineTo(parkingX + i * spotSpacing, lineY + lineHeight);
+                ctx.moveTo(parkingX + i * spotSpacing, lineTopY);
+                ctx.lineTo(parkingX + i * spotSpacing, lineBotY);
                 ctx.stroke();
             }
             ctx.setLineDash([5, 5]);
