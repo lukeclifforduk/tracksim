@@ -611,10 +611,23 @@
                 this.pathIndex = 0;
                 this.departureAngle = destAngle;
             }
-            stationCenter() {
+            stationWaypoints() {
+                // Two transit waypoints inside the station, each one forklift length past its entry edge.
+                // Parking side: aligned with parking entry x, one length past the parking-facing wall in y.
+                // Storage side: aligned with station vertical center, one length past the storage-facing wall in x.
+                const FORKLIFT_LENGTH = 22;
                 const cx = STATION_X + STATION_WIDTH / 2;
-                const cy = this.type === 'top' ? (TOP_Y - 69) : (BOTTOM_Y + 69);
-                return {x: cx, y: cy};
+                if (this.type === 'top') {
+                    // Parking is above (smaller y); storage is to the left (smaller x).
+                    const parkingSide = { x: cx, y: TOP_Y - 108 + FORKLIFT_LENGTH };
+                    const storageSide = { x: STATION_X + FORKLIFT_LENGTH, y: TOP_Y - 69 };
+                    return { parkingSide, storageSide };
+                } else {
+                    // Parking is below (larger y); storage is to the right (larger x).
+                    const parkingSide = { x: cx, y: BOTTOM_Y + 108 - FORKLIFT_LENGTH };
+                    const storageSide = { x: STATION_X + STATION_WIDTH - FORKLIFT_LENGTH, y: BOTTOM_Y + 69 };
+                    return { parkingSide, storageSide };
+                }
             }
             update(dt) {
                 if (this.state === 'HOME' || this.state === 'IDLE') {
@@ -716,8 +729,29 @@
             }
             goToCenter(nextTaskAfter) {
                 this.nextTask = nextTaskAfter;
-                const c = this.stationCenter();
-                this.buildPathTo(c.x, c.y, this.homeAngle);
+                const wps = this.stationWaypoints();
+                // Determine which side we're arriving from by the forklift's current position relative
+                // to the station building, NOT by Euclidean distance. Near a parking bay close to the
+                // storage side, the storage waypoint can be marginally closer in straight-line distance
+                // even though the forklift is clearly coming from parking — which would cause a zig-zag.
+                let comingFromParking;
+                if (this.type === 'top') {
+                    // Parking is above (smaller y); storage is to the left (smaller x).
+                    // Above the station building => parking side. Left of the station => storage side.
+                    if (this.y < TOP_Y - 108) comingFromParking = true;
+                    else if (this.x < STATION_X) comingFromParking = false;
+                    else comingFromParking = (this.y <= TOP_Y - 69); // fallback: vertical half of station
+                } else {
+                    // Parking is below (larger y); storage is to the right (larger x).
+                    if (this.y > BOTTOM_Y + 108) comingFromParking = true;
+                    else if (this.x > STATION_X + STATION_WIDTH) comingFromParking = false;
+                    else comingFromParking = (this.y >= BOTTOM_Y + 69);
+                }
+                const first  = comingFromParking ? wps.parkingSide : wps.storageSide;
+                const second = comingFromParking ? wps.storageSide : wps.parkingSide;
+                this.path = [first, second];
+                this.pathIndex = 0;
+                this.departureAngle = this.homeAngle;
                 this.state = 'TRANSIT_TO_CENTER';
             }
             completeWork() {
