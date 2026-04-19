@@ -92,31 +92,50 @@
         const trucks = [];
         let forklifts = [];
         let cranes = [];
-        // Forklift home positions: 2px gap from station-building corner.
-        // Station building top edge = TOP_Y - 108, bottom edge = TOP_Y - 30 (top station)
-        //                          = BOTTOM_Y + 30, BOTTOM_Y + 108 (bottom station)
-        // Dashed rect is 24 wide x 38 tall, forklift visual center offset from anchor
-        // by (+1.8, +1.35) for top (angle PI/2) and (-1.8, -1.35) for bottom (angle -PI/2).
-        // Anchor = rect-center - visual-offset, so:
-        const TOP_FORKLIFT_HOME_X = STATION_X + STATION_WIDTH - 2 - 12 - 2;   // right-aligned, 2px gap, 12 half-width, 2 offset
-        const TOP_FORKLIFT_HOME_Y = (TOP_Y - 108) + 2 + 19 - 1;                // top-aligned, 2px gap, 19 half-height, 1 offset
-        const BOTTOM_FORKLIFT_HOME_X = STATION_X + 2 + 12 + 2;                 // left-aligned, 2px gap, 12 half-width, 2 offset
-        const BOTTOM_FORKLIFT_HOME_Y = (BOTTOM_Y + 108) - 2 - 19 + 1;          // bottom-aligned, 2px gap, 19 half-height, 1 offset
-        // Road coordinates used by trucks
+        // Forklift home positions
+        const TOP_FORKLIFT_HOME_X = STATION_X + STATION_WIDTH - 2 - 12 - 2;
+        const TOP_FORKLIFT_HOME_Y = (TOP_Y - 108) + 2 + 19 - 1;
+        const BOTTOM_FORKLIFT_HOME_X = STATION_X + 2 + 12 + 2;
+        const BOTTOM_FORKLIFT_HOME_Y = (BOTTOM_Y + 108) - 2 - 19 + 1;
+        // Road coordinates
         const topRow4Y = TOP_ROAD_Y;
         const topRow14Y = QUARRY_OFFSET_Y + 14 * BLOCK_SIZE + 9;
         const topMiddleRowY = QUARRY_OFFSET_Y + 9 * BLOCK_SIZE + 9;
         const topCol3X = QUARRY_OFFSET_X + 3 * BLOCK_SIZE + 9;
         const topCol13X = QUARRY_OFFSET_X + 13 * BLOCK_SIZE + 9;
-        // BOTTOM QUARRY ROAD – true mirror of top quarry (same row indices 4, 9, 14)
-        // Row 4 is the outer horizontal (connects to parking road) - aligns with BOTTOM_ROAD_Y
-        // Row 14 is the inner horizontal (far from station)
-        // Row 9 is the middle shortcut; verticals at col 3 and col 13 span rows 4..14
-        const botRow4Y = BOTTOM_ROAD_Y; // outer horizontal at the parking road edge
-        const botRow14Y = BOTTOM_QUARRY_OFFSET_Y - 14 * BLOCK_SIZE + 9; // inner horizontal
-        const botMiddleRowY = BOTTOM_QUARRY_OFFSET_Y - 9 * BLOCK_SIZE + 9; // middle shortcut
+        const botRow4Y = BOTTOM_ROAD_Y;
+        const botRow14Y = BOTTOM_QUARRY_OFFSET_Y - 14 * BLOCK_SIZE + 9;
+        const botMiddleRowY = BOTTOM_QUARRY_OFFSET_Y - 9 * BLOCK_SIZE + 9;
         const botCol3X = BOTTOM_QUARRY_OFFSET_X - 3 * BLOCK_SIZE + 9;
         const botCol13X = BOTTOM_QUARRY_OFFSET_X - 13 * BLOCK_SIZE + 9;
+        // Helper: closest point on a line segment to (px, py)
+        function closestPointOnSegment(px, py, ax, ay, bx, by) {
+            const dx = bx - ax, dy = by - ay;
+            const len2 = dx * dx + dy * dy;
+            if (len2 === 0) return { x: ax, y: ay };
+            let t = ((px - ax) * dx + (py - ay) * dy) / len2;
+            t = Math.max(0, Math.min(1, t));
+            return { x: ax + t * dx, y: ay + t * dy };
+        }
+        // Helper: closest point on the bottom-quarry road network to a given (px, py).
+        // Road network = rectangle (top/bottom rows + left/right columns) + middle crossbar.
+        function closestRoadPointBottom(px, py) {
+            const segments = [
+                [botCol3X, botRow4Y, botCol13X, botRow4Y],           // top row
+                [botCol3X, botMiddleRowY, botCol13X, botMiddleRowY], // middle row
+                [botCol3X, botRow14Y, botCol13X, botRow14Y],         // bottom row
+                [botCol3X, botRow4Y, botCol3X, botRow14Y],           // left column
+                [botCol13X, botRow4Y, botCol13X, botRow14Y]          // right column
+            ];
+            let best = null;
+            let bestDist = Infinity;
+            for (const s of segments) {
+                const cp = closestPointOnSegment(px, py, s[0], s[1], s[2], s[3]);
+                const d = Math.hypot(cp.x - px, cp.y - py);
+                if (d < bestDist) { bestDist = d; best = cp; }
+            }
+            return best;
+        }
         function isTopRoadBlock(row, col) {
             if (row === 4 && col >= 3) return true;
             if (row === 14 && col >= 3 && col <= 13) return true;
@@ -126,11 +145,11 @@
             return false;
         }
         function isBottomRoadBlock(row, col) {
-            if (row === 4 && col >= 3) return true; // outer horizontal (connects to parking)
-            if (row === 14 && col >= 3 && col <= 13) return true; // inner horizontal (far)
-            if (row === 9 && col >= 3 && col <= 13) return true; // middle shortcut
-            if (col === 3 && row >= 4 && row <= 14) return true; // left vertical
-            if (col === 13 && row >= 4 && row <= 14) return true; // right vertical
+            if (row === 4 && col >= 3) return true;
+            if (row === 14 && col >= 3 && col <= 13) return true;
+            if (row === 9 && col >= 3 && col <= 13) return true;
+            if (col === 3 && row >= 4 && row <= 14) return true;
+            if (col === 13 && row >= 4 && row <= 14) return true;
             return false;
         }
         function initSim() {
@@ -139,7 +158,6 @@
             trucks.length = 0;
             forklifts.length = 0;
             cranes.length = 0;
-            // Top Quarry – permanent exact layout (unchanged)
             for (let row = 0; row < QUARRY_MAX_ROWS; row++) {
                 const numCols = TOP_QUARRY_COLS_PER_ROW[row];
                 for (let col = 0; col < numCols; col++) {
@@ -147,7 +165,6 @@
                     topBlocks.push({ x: QUARRY_OFFSET_X + col * BLOCK_SIZE, y: QUARRY_OFFSET_Y + row * BLOCK_SIZE, active: true });
                 }
             }
-            // Bottom Quarry – exact mirrored layout with your requested road changes
             for (let row = 0; row < BOTTOM_QUARRY_MAX_ROWS; row++) {
                 const numCols = TOP_QUARRY_COLS_PER_ROW[row];
                 for (let col = 0; col < numCols; col++) {
@@ -193,6 +210,7 @@
                 this.routeIndex = 0;
                 this.hasBlock = false;
                 this.depositTarget = null;
+                this.safetyNetTarget = null;
                 this.speed = 61.75;
             }
             update(dt) {
@@ -256,30 +274,64 @@
                         break;
                     case 'DRIVING':
                         if (this.moveToTarget(dt)) {
+                            // If this is the bottom truck's safety-net detour waypoint, deposit here instead of advancing normally.
+                            if (this.type === 'bottom' && this.hasBlock && this.safetyNetTarget) {
+                                this.depositTarget = this.safetyNetTarget;
+                                this.safetyNetTarget = null;
+                                this.state = 'LOADING';
+                                this.timer = 1.0;
+                                break;
+                            }
                             this.routeIndex++;
+                            // Safety net: about to advance onto the final "return to parking" leg while still carrying a block.
+                            // Divert via the closest point on the quarry road network to the nearest empty block, deposit, then continue home.
+                            if (this.type === 'bottom' && this.hasBlock && this.routeIndex === this.route.length - 1) {
+                                let nearest = null;
+                                let nearestDist = Infinity;
+                                for (const b of bottomBlocks) {
+                                    if (b.active) continue;
+                                    const cx = b.x + BLOCK_SIZE / 2;
+                                    const cy = b.y + BLOCK_SIZE / 2;
+                                    const d = Math.hypot(cx - this.x, cy - this.y);
+                                    if (d < nearestDist) { nearestDist = d; nearest = b; }
+                                }
+                                if (nearest) {
+                                    const targetCx = nearest.x + BLOCK_SIZE / 2;
+                                    const targetCy = nearest.y + BLOCK_SIZE / 2;
+                                    const rp = closestRoadPointBottom(targetCx, targetCy);
+                                    // Rebuild route: [detour waypoint, home]. Mark detour waypoint as the safety-net drop spot.
+                                    const homeWp = this.route[this.route.length - 1];
+                                    this.route = [{ x: rp.x, y: rp.y }, homeWp];
+                                    this.routeIndex = 0;
+                                    this.targetX = this.route[0].x;
+                                    this.targetY = this.route[0].y;
+                                    this.safetyNetTarget = nearest;
+                                    break;
+                                }
+                            }
                             if (this.routeIndex >= this.route.length) {
                                 this.angle = this.type === 'top' ? -Math.PI / 2 : Math.PI / 2;
                                 this.state = 'PARKED';
                                 this.timer = Math.random() * 3 + 1.5;
+                                if (this.type === 'top' && !this.hasBlock && !topBlocks.some(b => b.active)) {
+                                    this.timer = 999999;
+                                }
                             } else {
                                 this.targetX = this.route[this.routeIndex].x;
                                 this.targetY = this.route[this.routeIndex].y;
                             }
                         }
-                        if (this.type === 'bottom' && this.hasBlock && this.routeIndex >= 1 && this.routeIndex <= 3) {
-                            let candidates = [];
-                            let nearest = null;
-                            let nearestDist = Infinity;
-                            for (let b of bottomBlocks) {
+                        // Continuous 5-block-radius deposit scan: active anywhere on the quarry roads
+                        // (i.e. every route segment except the final return-to-parking leg).
+                        if (this.type === 'bottom' && this.hasBlock && this.routeIndex < this.route.length - 1) {
+                            const candidates = [];
+                            for (const b of bottomBlocks) {
                                 if (b.active) continue;
                                 const dist = Math.hypot((b.x + BLOCK_SIZE / 2) - this.x, (b.y + BLOCK_SIZE / 2) - this.y);
                                 if (dist <= 5 * BLOCK_SIZE) candidates.push(b);
-                                if (dist < nearestDist) { nearestDist = dist; nearest = b; }
                             }
-                            let chosen = null;
-                            if (candidates.length > 0) chosen = candidates[Math.floor(Math.random() * candidates.length)];
-                            else if (nearest) chosen = nearest;
-                            if (chosen) {
+                            if (candidates.length > 0) {
+                                const chosen = candidates[Math.floor(Math.random() * candidates.length)];
                                 this.depositTarget = chosen;
                                 this.state = 'LOADING';
                                 this.timer = 1.0;
@@ -401,7 +453,6 @@
                 this.departureAngle = 0;
             }
             buildPathTo(destX, destY, destAngle) {
-                // Direct straight-line travel from current position to destination.
                 this.path = [{x: destX, y: destY}];
                 this.pathIndex = 0;
                 this.departureAngle = destAngle;
@@ -435,7 +486,6 @@
                 }
             }
             findNextTask() {
-                // Route: HOME -> block -> station-center -> dropoff -> station-center -> (next block | home)
                 if (this.type === 'top') {
                     if (topStorageCount >= STORAGE_CAPACITY) { this.goHomeIfNotThere(); return; }
                     for (let t of trucks) {
@@ -487,24 +537,19 @@
                 this.timer = 0.75;
             }
             arriveAtCenter() {
-                // Arrived at station-center waypoint; proceed to the next stage of the job.
                 if (this.nextTask === 'GO_TO_DROP_TOP') {
-                    // top forklift: after picking from truck, head to top storage
                     this.nextTask = 'DROP_STORAGE';
                     this.buildPathTo(TOP_STORAGE_X + STORAGE_WIDTH / 2, TOP_STORAGE_Y + STORAGE_HEIGHT / 2, Math.PI);
                     this.state = 'MOVING';
                 } else if (this.nextTask === 'POST_DROP_TOP') {
-                    // after dropping at storage and returning to center: try another pickup
                     this.nextTask = null;
                     this.findNextTask();
                 } else if (this.nextTask === 'GO_TO_DROP_BOTTOM') {
-                    // bottom forklift: after picking from storage, head to target truck
                     if (this.targetTruck && this.targetTruck.state === 'PARKED' && !this.targetTruck.hasBlock) {
                         this.nextTask = 'DELIVER_TRUCK';
                         this.buildPathTo(this.targetTruck.x, this.targetTruck.y, -Math.PI / 2);
                         this.state = 'MOVING';
                     } else {
-                        // target truck no longer valid; put block back and go home
                         if (this.carrying) { bottomStorageCount = Math.min(STORAGE_CAPACITY, bottomStorageCount + 1); this.carrying = false; }
                         this.targetTruck = null;
                         this.nextTask = null;
@@ -526,15 +571,19 @@
                     if (this.nextTask === 'UNLOAD_TRUCK') {
                         if (this.targetTruck && this.targetTruck.hasBlock) {
                             this.targetTruck.hasBlock = false;
-                            this.carrying = true;
+                            this.carrying = true;   // ← ADD THIS LINE (was missing)
+if (!topBlocks.some(b => b.active)) {
+    this.targetTruck.timer = 999999;
+}
+                            if (!topBlocks.some(b => b.active)) {
+                                this.targetTruck.timer = 999999;
+                            }
                         }
                         this.targetTruck = null;
-                        // Go to station center, then to storage
                         this.goToCenter('GO_TO_DROP_TOP');
                     } else if (this.nextTask === 'DROP_STORAGE') {
                         if (this.carrying) topStorageCount = Math.min(STORAGE_CAPACITY, topStorageCount + 1);
                         this.carrying = false;
-                        // After drop: go back to station center, then decide next action
                         this.goToCenter('POST_DROP_TOP');
                     }
                 } else {
@@ -543,7 +592,6 @@
                             bottomStorageCount--;
                             this.carrying = true;
                         }
-                        // Pick the nearest available empty truck now (will finalize after center waypoint)
                         let truck = null;
                         let minDist = Infinity;
                         for (let t of trucks) {
@@ -554,10 +602,8 @@
                         }
                         if (truck) {
                             this.targetTruck = truck;
-                            // Route through station center
                             this.goToCenter('GO_TO_DROP_BOTTOM');
                         } else {
-                            // No truck available anymore; return the block and go home
                             if (this.carrying) { bottomStorageCount = Math.min(STORAGE_CAPACITY, bottomStorageCount + 1); this.carrying = false; }
                             this.goToCenter('POST_DROP_BOTTOM');
                         }
@@ -579,12 +625,11 @@
                 ctx.translate(this.x, this.y);
                 ctx.rotate(this.angle);
                 ctx.scale(0.9, 0.9);
-                // Tiny wheels (drawn first so the body sits on top of them, flush with body edges)
                 ctx.fillStyle = '#1c2526';
-                ctx.fillRect(-15, -11, 5, 3); // back-top wheel (1px overlap with body, 2px poke-out)
-                ctx.fillRect(-15, 4, 5, 3);   // back-bottom wheel (1px overlap with body, 2px poke-out)
-                ctx.fillRect(-2, -11, 5, 3);  // front-top wheel
-                ctx.fillRect(-2, 4, 5, 3);    // front-bottom wheel
+                ctx.fillRect(-15, -11, 5, 3);
+                ctx.fillRect(-15, 4, 5, 3);
+                ctx.fillRect(-2, -11, 5, 3);
+                ctx.fillRect(-2, 4, 5, 3);
                 ctx.fillStyle = COLORS.forkliftBody;
                 ctx.fillRect(-16, -9, 22, 14);
                 ctx.fillStyle = COLORS.forkliftForks;
@@ -610,7 +655,6 @@
                 this.pivotY = this.baseY - 82;
                 this.minLength = 28;
                 this.maxLength = 160;
-                // Default: arm hangs straight down from pivot (6 o'clock), parallel to the mast
                 this.defaultAngle = Math.PI / 2;
                 this.currentAngle = this.defaultAngle;
                 this.currentLength = this.minLength;
@@ -899,7 +943,6 @@
             ctx.lineCap = 'square';
             ctx.strokeStyle = COLORS.parkingAsphalt;
             ctx.lineWidth = 20;
-            // Top road (unchanged)
             ctx.beginPath();
             ctx.moveTo(parkingX + PARKING_WIDTH - 10, TOP_ROAD_Y);
             ctx.lineTo(topCol3X, TOP_ROAD_Y);
@@ -911,7 +954,6 @@
             ctx.moveTo(topCol3X, topMiddleRowY);
             ctx.lineTo(topCol13X, topMiddleRowY);
             ctx.stroke();
-            // Bottom road – true mirror of top (rows 4, 9, 14)
             ctx.beginPath();
             ctx.moveTo(parkingX + 10, botRow4Y);
             ctx.lineTo(botCol3X, botRow4Y);
@@ -996,7 +1038,6 @@
             ctx.setLineDash([5, 5]);
             ctx.strokeStyle = '#e0e0e0';
             ctx.lineWidth = 3;
-            // Top forklift dashed parking box: centered on sprite visual center (offset +1.8, +1.35 from anchor)
             ctx.strokeRect(TOP_FORKLIFT_HOME_X - 10, TOP_FORKLIFT_HOME_Y - 18, 24, 38);
             ctx.setLineDash([]);
             ctx.fillStyle = COLORS.stationPlatform;
@@ -1012,7 +1053,6 @@
                 ctx.lineTo(parkingX + i * spotSpacing, lineY + lineHeight);
                 ctx.stroke();
             }
-            // Bottom forklift dashed parking box: centered on sprite visual center (offset -1.8, -1.35 from anchor)
             ctx.setLineDash([5, 5]);
             ctx.strokeRect(BOTTOM_FORKLIFT_HOME_X - 14, BOTTOM_FORKLIFT_HOME_Y - 20, 24, 38);
             ctx.setLineDash([]);
@@ -1089,8 +1129,6 @@
             ctx.save();
             ctx.translate(x, y);
             ctx.rotate(angle);
-            // Wheels drawn first so the body overlaps their inner portion.
-            // Body half-width = 9; wheels span y = -12..-4 and y = 4..12 (3px under body, 3px poke-out).
             ctx.fillStyle = COLORS.engineWheel;
             ctx.fillRect(-17, -12, 9, 6);
             ctx.fillRect(6, -12, 9, 6);
@@ -1106,8 +1144,6 @@
             ctx.save();
             ctx.translate(x, y);
             ctx.rotate(angle);
-            // Wheels drawn first so the body overlaps their inner portion.
-            // Body half-width = 10; wheels span y = -13..-8 and y = 8..13 (2px under body, 3px poke-out).
             ctx.fillStyle = COLORS.carriageWheel;
             ctx.fillRect(-CARRIAGE_LENGTH / 2 + 6, -13, 8, 5);
             ctx.fillRect(CARRIAGE_LENGTH / 2 - 14, -13, 8, 5);
