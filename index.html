@@ -192,6 +192,7 @@
                 this.route = [];
                 this.routeIndex = 0;
                 this.hasBlock = false;
+                this.depositTarget = null;
                 this.speed = 61.75;
             }
             update(dt) {
@@ -279,9 +280,8 @@
                             if (candidates.length > 0) chosen = candidates[Math.floor(Math.random() * candidates.length)];
                             else if (nearest) chosen = nearest;
                             if (chosen) {
-                                chosen.active = true;
-                                this.hasBlock = false;
-                                this.state = 'LOADING'; // same freeze as top pickup
+                                this.depositTarget = chosen;
+                                this.state = 'LOADING';
                                 this.timer = 1.0;
                             }
                         }
@@ -308,7 +308,14 @@
                         break;
                     case 'LOADING':
                         this.timer -= dt;
-                        if (this.timer <= 0) this.state = 'DRIVING';
+                        if (this.timer <= 0) {
+                            if (this.depositTarget) {
+                                this.depositTarget.active = true;
+                                this.depositTarget = null;
+                                this.hasBlock = false;
+                            }
+                            this.state = 'DRIVING';
+                        }
                         break;
                 }
             }
