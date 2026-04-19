@@ -47,33 +47,33 @@
         // Station & Parking settings
         const STATION_X = 529;
         const STATION_WIDTH = 142;
-        const PARKING_WIDTH = 110;
+        const PARKING_WIDTH = 120;
         const PARKING_HEIGHT = 55;
         const topParkingY = TOP_Y - 30 - 78 - PARKING_HEIGHT - 4;
         const TOP_ROAD_Y = topParkingY + PARKING_HEIGHT / 2;
         const bottomParkingY = BOTTOM_Y + 4 + 26 + 78 + 6;
         const BOTTOM_ROAD_Y = bottomParkingY + PARKING_HEIGHT / 2;
         // Storage areas
-        const STORAGE_WIDTH = 92;
-        const STORAGE_HEIGHT = 98;
-        const TOP_STORAGE_X = STATION_X - 108;
-        const TOP_STORAGE_Y = TOP_Y - 128;
+        const STORAGE_WIDTH = 80;
+        const STORAGE_HEIGHT = 80;
+        const TOP_STORAGE_X = STATION_X - 89 - 6;
+        const TOP_STORAGE_Y = TOP_Y - 112 - 3;
         const BOTTOM_STORAGE_X = STATION_X + STATION_WIDTH + 18;
-        const BOTTOM_STORAGE_Y = BOTTOM_Y + 29;
+        const BOTTOM_STORAGE_Y = BOTTOM_Y + 37 - 3;
         const STORAGE_CAPACITY = 25;
         let topStorageCount = 0;
         let bottomStorageCount = 0;
         let trainBlocks = [false, false, false, false, false];
         // Quarry settings
         const BLOCK_SIZE = 18;
-        const QUARRY_MAX_ROWS = 18;
-        const BOTTOM_QUARRY_MAX_ROWS = 18;
+        const QUARRY_MAX_ROWS = 19;
+        const BOTTOM_QUARRY_MAX_ROWS = 19;
         const QUARRY_OFFSET_X = 12;
         const QUARRY_OFFSET_Y = TOP_ROAD_Y - 81;
         const BOTTOM_QUARRY_OFFSET_X = WIDTH - 12 - BLOCK_SIZE;
         const BOTTOM_QUARRY_OFFSET_Y = BOTTOM_ROAD_Y + 45 + BLOCK_SIZE;
         // PERMANENT TOP QUARRY LAYOUT (unchanged)
-        const TOP_QUARRY_COLS_PER_ROW = [18, 19, 19, 18, 17, 18, 17, 16, 15, 15, 14, 13, 12, 12, 11, 10, 9, 4];
+        const TOP_QUARRY_COLS_PER_ROW = [18, 19, 19, 18, 17, 18, 17, 16, 16, 15, 14, 13, 12, 12, 11, 11, 9, 6, 5];
         // Colors
         const COLORS = {
             grass: '#2e8b57', trackBed: '#654321', rail: '#D3D3D3',
@@ -182,10 +182,10 @@
                 this.parkX = parkingX + spotSpacing * 0.5 + index * spotSpacing;
                 if (this.type === 'top') {
                     this.parkY = topParkingY + PARKING_HEIGHT / 2;
-                    this.angle = Math.PI / 2;
+                    this.angle = -Math.PI / 2;
                 } else {
                     this.parkY = bottomParkingY + PARKING_HEIGHT / 2;
-                    this.angle = -Math.PI / 2;
+                    this.angle = Math.PI / 2;
                 }
                 this.x = this.parkX;
                 this.y = this.parkY;
@@ -258,7 +258,7 @@
                         if (this.moveToTarget(dt)) {
                             this.routeIndex++;
                             if (this.routeIndex >= this.route.length) {
-                                this.angle = this.type === 'top' ? Math.PI / 2 : -Math.PI / 2;
+                                this.angle = this.type === 'top' ? -Math.PI / 2 : Math.PI / 2;
                                 this.state = 'PARKED';
                                 this.timer = Math.random() * 3 + 1.5;
                             } else {
@@ -352,23 +352,25 @@
                 ctx.translate(this.x, this.y);
                 ctx.rotate(this.angle);
                 ctx.fillStyle = COLORS.truckTrailer;
-                ctx.fillRect(-22, -7, 16, 14);
+                ctx.fillRect(-22, -8, 17, 17);
                 ctx.fillStyle = '#444';
-                ctx.fillRect(-6, -2, 4, 4);
+                ctx.fillRect(-5, -2, 1, 4);
                 ctx.fillStyle = COLORS.truckCab;
-                ctx.fillRect(-2, -5, 10, 10);
+                ctx.fillRect(-4, -6, 10, 12);
                 ctx.fillStyle = COLORS.truckWindow;
-                ctx.fillRect(4, -3, 3, 6);
+                ctx.fillRect(2, -3, 3, 6);
                 ctx.fillStyle = COLORS.engineWheel;
                 ctx.fillRect(-18, -9, 6, 2);
-                ctx.fillRect(-18, 7, 6, 2);
+                ctx.fillRect(-18, 8, 6, 2);
                 ctx.fillRect(0, -7, 6, 2);
                 ctx.fillRect(0, 5, 6, 2);
                 if (this.hasBlock) {
                     ctx.fillStyle = COLORS.quarryMain;
-                    ctx.fillRect(-19, -5, 10, 10);
+                    ctx.fillRect(-20, -6, 13, 13);
                     ctx.fillStyle = COLORS.quarryMid;
-                    ctx.fillRect(-17, -3, 6, 6);
+                    ctx.fillRect(-18, -4, 9, 9);
+                    ctx.fillStyle = COLORS.quarryDeep;
+                    ctx.fillRect(-15, -1, 3, 3);
                 }
                 ctx.restore();
             }
@@ -586,13 +588,15 @@
                 ctx.fillStyle = COLORS.forkliftBody;
                 ctx.fillRect(-16, -9, 22, 14);
                 ctx.fillStyle = COLORS.forkliftForks;
-                ctx.fillRect(5, -10, 14, 3);
-                ctx.fillRect(5, 3, 14, 3);
+                ctx.fillRect(5, -9, 14, 3);
+                ctx.fillRect(5, 2, 14, 3);
                 if (this.carrying) {
                     ctx.fillStyle = COLORS.quarryMain;
-                    ctx.fillRect(12, -10, 13, 13);
+                    ctx.fillRect(7, -8, 13, 13);
                     ctx.fillStyle = COLORS.quarryMid;
-                    ctx.fillRect(15, -7, 7, 7);
+                    ctx.fillRect(9, -6, 9, 9);
+                    ctx.fillStyle = COLORS.quarryDeep;
+                    ctx.fillRect(12, -3, 3, 3);
                 }
                 ctx.restore();
             }
@@ -822,9 +826,11 @@
                 ctx.fillRect(this.hookX - this.baseX - 6, this.hookY - this.baseY - 8, 12, 14);
                 if (this.isCarrying) {
                     ctx.fillStyle = COLORS.quarryMain;
-                    ctx.fillRect(this.hookX - this.baseX - 9, this.hookY - this.baseY - 27, 18, 18);
+                    ctx.fillRect(this.hookX - this.baseX - 6, this.hookY - this.baseY - 21, 13, 13);
                     ctx.fillStyle = COLORS.quarryMid;
-                    ctx.fillRect(this.hookX - this.baseX - 6, this.hookY - this.baseY - 24, 12, 12);
+                    ctx.fillRect(this.hookX - this.baseX - 4, this.hookY - this.baseY - 19, 9, 9);
+                    ctx.fillStyle = COLORS.quarryDeep;
+                    ctx.fillRect(this.hookX - this.baseX - 1, this.hookY - this.baseY - 16, 3, 3);
                 }
                 ctx.restore();
             }
@@ -992,6 +998,7 @@
             ctx.lineWidth = 3;
             // Top forklift dashed parking box: centered on sprite visual center (offset +1.8, +1.35 from anchor)
             ctx.strokeRect(TOP_FORKLIFT_HOME_X - 10, TOP_FORKLIFT_HOME_Y - 18, 24, 38);
+            ctx.setLineDash([]);
             ctx.fillStyle = COLORS.stationPlatform;
             ctx.fillRect(STATION_X, BOTTOM_Y + 4, STATION_WIDTH, 26);
             ctx.fillStyle = COLORS.stationBuilding;
@@ -1006,6 +1013,7 @@
                 ctx.stroke();
             }
             // Bottom forklift dashed parking box: centered on sprite visual center (offset -1.8, -1.35 from anchor)
+            ctx.setLineDash([5, 5]);
             ctx.strokeRect(BOTTOM_FORKLIFT_HOME_X - 14, BOTTOM_FORKLIFT_HOME_Y - 20, 24, 38);
             ctx.setLineDash([]);
         }
@@ -1018,22 +1026,26 @@
             ctx.strokeRect(BOTTOM_STORAGE_X, BOTTOM_STORAGE_Y, STORAGE_WIDTH, STORAGE_HEIGHT);
             ctx.fillRect(BOTTOM_STORAGE_X + 4, BOTTOM_STORAGE_Y + 4, STORAGE_WIDTH - 8, STORAGE_HEIGHT - 8);
             const cols = 5;
-            const cellStep = 15;
+            const cellStep = 14;
             for (let i = 0; i < topStorageCount; i++) {
-                const sx = TOP_STORAGE_X + 9 + (i % cols) * cellStep;
-                const sy = TOP_STORAGE_Y + 9 + Math.floor(i / cols) * cellStep;
+                const sx = TOP_STORAGE_X + 5 + (i % cols) * cellStep;
+                const sy = TOP_STORAGE_Y + 5 + Math.floor(i / cols) * cellStep;
                 ctx.fillStyle = COLORS.quarryMain;
                 ctx.fillRect(sx, sy, 13, 13);
                 ctx.fillStyle = COLORS.quarryMid;
                 ctx.fillRect(sx + 2, sy + 2, 9, 9);
+                ctx.fillStyle = COLORS.quarryDeep;
+                ctx.fillRect(sx + 5, sy + 5, 3, 3);
             }
             for (let i = 0; i < bottomStorageCount; i++) {
-                const sx = BOTTOM_STORAGE_X + 9 + (i % cols) * cellStep;
-                const sy = BOTTOM_STORAGE_Y + 9 + Math.floor(i / cols) * cellStep;
+                const sx = BOTTOM_STORAGE_X + 5 + (i % cols) * cellStep;
+                const sy = BOTTOM_STORAGE_Y + 5 + Math.floor(i / cols) * cellStep;
                 ctx.fillStyle = COLORS.quarryMain;
                 ctx.fillRect(sx, sy, 13, 13);
                 ctx.fillStyle = COLORS.quarryMid;
                 ctx.fillRect(sx + 2, sy + 2, 9, 9);
+                ctx.fillStyle = COLORS.quarryDeep;
+                ctx.fillRect(sx + 5, sy + 5, 3, 3);
             }
         }
         function drawRails() {
@@ -1107,9 +1119,11 @@
             ctx.fillRect(-(CARRIAGE_LENGTH - 7) / 2, -(CARRIAGE_WIDTH - 5) / 2, CARRIAGE_LENGTH - 7, CARRIAGE_WIDTH - 5);
             if (hasBlock) {
                 ctx.fillStyle = COLORS.quarryMain;
-                ctx.fillRect(-9, -9, 13, 13);
+                ctx.fillRect(-6, -6, 13, 13);
                 ctx.fillStyle = COLORS.quarryMid;
-                ctx.fillRect(-6, -6, 7, 7);
+                ctx.fillRect(-4, -4, 9, 9);
+                ctx.fillStyle = COLORS.quarryDeep;
+                ctx.fillRect(-1, -1, 3, 3);
             }
             ctx.restore();
         }
