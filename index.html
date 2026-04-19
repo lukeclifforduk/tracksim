@@ -108,6 +108,21 @@
         const botMiddleRowY = BOTTOM_QUARRY_OFFSET_Y - 9 * BLOCK_SIZE + 9;
         const botCol3X = BOTTOM_QUARRY_OFFSET_X - 3 * BLOCK_SIZE + 9;
         const botCol13X = BOTTOM_QUARRY_OFFSET_X - 13 * BLOCK_SIZE + 9;
+        // NEW: exact storage slot centers for accurate crane aiming
+        function getTopStorageSlotPosition(index) {
+            const cols = 5;
+            const cellStep = 14;
+            const sx = TOP_STORAGE_X + 5 + (index % cols) * cellStep + 6.5; // center of 13px block
+            const sy = TOP_STORAGE_Y + 5 + Math.floor(index / cols) * cellStep + 6.5;
+            return { x: sx, y: sy };
+        }
+        function getBottomStorageSlotPosition(index) {
+            const cols = 5;
+            const cellStep = 14;
+            const sx = BOTTOM_STORAGE_X + 5 + (index % cols) * cellStep + 6.5;
+            const sy = BOTTOM_STORAGE_Y + 5 + Math.floor(index / cols) * cellStep + 6.5;
+            return { x: sx, y: sy };
+        }
         // Helper: closest point on a line segment to (px, py)
         function closestPointOnSegment(px, py, ax, ay, bx, by) {
             const dx = bx - ax, dy = by - ay;
@@ -276,17 +291,17 @@
                 this.routeIndex = 0;
                 this.hasBlock = false;
                 this.depositTarget = null;
-                this.pickupTarget = null; // block reserved for pickup during APPROACHING
-                this.approachBudget = 0; // remaining distance (px) allowed during APPROACHING
+                this.pickupTarget = null;
+                this.approachBudget = 0;
                 this.safetyNetTarget = null;
                 this.safetyNetTriggerIndex = -1;
                 this.speed = 61.75;
-                this.parkedTime = 0; // NEW: track continuous time spent in PARKED state for longest-wait selection
+                this.parkedTime = 0;
             }
             update(dt) {
                 switch (this.state) {
                     case 'PARKED':
-                        this.parkedTime += dt; // accumulate wait time
+                        this.parkedTime += dt;
                         this.timer -= dt;
                         if (this.timer <= 0) {
                             if (this.type === 'top') {
@@ -295,7 +310,7 @@
                             }
                             if (this.type === 'bottom' && !this.hasBlock) { this.timer = 0.8; return; }
                             this.state = 'DRIVING';
-                            this.parkedTime = 0; // reset when leaving parking
+                            this.parkedTime = 0;
                             if (this.type === 'top') {
                                 const useShortcut = Math.random() < 0.5;
                                 if (useShortcut) {
@@ -348,7 +363,6 @@
                         if (this.moveToTarget(dt)) {
                             if (this.type === 'bottom' && this.hasBlock && this.safetyNetTarget &&
                                 this.routeIndex === this.safetyNetTriggerIndex) {
-                                // Safety-net detour arrived. Reserve only — commit on LOADING timer.
                                 this.depositTarget = this.safetyNetTarget;
                                 this.safetyNetTarget = null;
                                 this.safetyNetTriggerIndex = -1;
@@ -358,7 +372,6 @@
                             }
                             if (this.type === 'top' && !this.hasBlock && this.safetyNetTarget &&
                                 this.routeIndex === this.safetyNetTriggerIndex) {
-                                // Safety-net detour arrived. Reserve only — commit on LOADING timer.
                                 this.pickupTarget = this.safetyNetTarget;
                                 this.safetyNetTarget = null;
                                 this.safetyNetTriggerIndex = -1;
@@ -435,7 +448,7 @@
                                 this.angle = this.type === 'top' ? -Math.PI / 2 : Math.PI / 2;
                                 this.state = 'PARKED';
                                 this.timer = Math.random() * 3 + 1.5;
-                                this.parkedTime = 0; // reset when re-entering PARKED
+                                this.parkedTime = 0;
                                 if (this.type === 'top' && !this.hasBlock && !topBlocks.some(b => b.active)) {
                                     this.timer = 999999;
                                 }
@@ -453,12 +466,10 @@
                             }
                             if (candidates.length > 0) {
                                 const chosen = candidates[Math.floor(Math.random() * candidates.length)];
-                                // Reserve — other trucks skip this block, but it stays visually
-                                // absent from the quarry (active=false) until the LOADING timer completes.
                                 chosen.reserved = true;
                                 this.depositTarget = chosen;
                                 this.state = 'APPROACHING';
-                                this.approachBudget = 3 * BLOCK_SIZE; // drive up to 3 blocks further
+                                this.approachBudget = 3 * BLOCK_SIZE;
                             }
                         }
                         if (this.type === 'top' && !this.hasBlock && this.routeIndex < this.route.length - 1) {
@@ -470,19 +481,14 @@
                             }
                             if (candidates.length > 0) {
                                 const chosen = candidates[Math.floor(Math.random() * candidates.length)];
-                                // Reserve — other trucks skip, but block stays visually in the quarry
-                                // (active=true) until LOADING timer completes.
                                 chosen.reserved = true;
                                 this.pickupTarget = chosen;
                                 this.state = 'APPROACHING';
-                                this.approachBudget = 3 * BLOCK_SIZE; // drive up to 3 blocks further
+                                this.approachBudget = 3 * BLOCK_SIZE;
                             }
                         }
                         break;
                     case 'APPROACHING':
-                        // Continue driving along the current route, consuming up to approachBudget
-                        // distance (2 blocks = 36px). Stop when budget is spent OR the truck reaches
-                        // its current waypoint — whichever happens first.
                         {
                             const prevX = this.x;
                             const prevY = this.y;
@@ -490,7 +496,6 @@
                             const moved = Math.hypot(this.x - prevX, this.y - prevY);
                             this.approachBudget -= moved;
                             if (reached || this.approachBudget <= 0) {
-                                // Stop here — enter LOADING. Block only leaves/enters quarry when timer completes.
                                 this.state = 'LOADING';
                                 this.timer = 1.0;
                             }
@@ -499,15 +504,14 @@
                     case 'LOADING':
                         this.timer -= dt;
                         if (this.timer <= 0) {
-                            // Timer complete — NOW the block visibly transfers.
                             if (this.depositTarget) {
-                                this.depositTarget.active = true; // appears in quarry
+                                this.depositTarget.active = true;
                                 this.depositTarget.reserved = false;
                                 this.depositTarget = null;
                                 this.hasBlock = false;
                             }
                             if (this.pickupTarget) {
-                                this.pickupTarget.active = false; // disappears from quarry
+                                this.pickupTarget.active = false;
                                 this.pickupTarget.reserved = false;
                                 this.pickupTarget = null;
                                 this.hasBlock = true;
@@ -642,7 +646,6 @@
             findNextTask() {
                 if (this.type === 'top') {
                     if (topStorageCount >= STORAGE_CAPACITY) { this.goHomeIfNotThere(); return; }
-                    // NEW: choose the full top truck that has been waiting the LONGEST (highest parkedTime)
                     let bestTruck = null;
                     let maxWait = -1;
                     for (let t of trucks) {
@@ -766,7 +769,6 @@
                             bottomStorageCount--;
                             this.carrying = true;
                         }
-                        // NEW: choose the empty bottom truck that has been waiting the LONGEST (highest parkedTime)
                         let truck = null;
                         let maxWait = -1;
                         for (let t of trucks) {
@@ -826,31 +828,16 @@
         class Crane {
             constructor(type) {
                 this.type = type;
-                // ── Positioning (Q2) ──────────────────────────────────────────────────
-                // New crane draw: center-bottom anchor at (baseX, baseY)
-                // base rect occupies (baseX-13, baseY-10) to (baseX+13, baseY)
-                // static arm: 17px tall, sits from baseY-10 up to baseY-27
-                // ball joint center (pivotY): baseY - 10 - 17 = baseY - 27, r=6
-                // ball joint top: baseY - 33
-                //
-                // Top crane — bottom-left of station building:
-                // left edge of base = STATION_X + 2 => baseX = STATION_X + 2 + 13 = 544
-                // base bottom 1px above station building bottom (TOP_Y - 30) => baseY = TOP_Y - 31
-                //
-                // Bottom crane — top-right of station building:
-                // right edge of base = STATION_X + STATION_WIDTH - 2 => baseX = ... - 13 = 656
-                // ball joint top 1px below station building top (BOTTOM_Y+30) => baseY-33 = BOTTOM_Y+31 => baseY = BOTTOM_Y+64
                 this.baseX = type === 'top'
-                    ? STATION_X + 2 + 13 // 544
-                    : STATION_X + STATION_WIDTH - 2 - 13; // 656
+                    ? STATION_X + 2 + 13
+                    : STATION_X + STATION_WIDTH - 2 - 13;
                 this.baseY = type === 'top'
-                    ? (TOP_Y - 30) - 1 // 191 (base bottom 1px above station bottom)
-                    : (BOTTOM_Y + 4 + 26) + 33; // 542 (ball top = stationTop + 1px)
+                    ? (TOP_Y - 30) - 1
+                    : (BOTTOM_Y + 4 + 26) + 33;
                 this.pivotX = this.baseX;
-                this.pivotY = this.baseY - 27; // ball joint center
-                // ── Arm lengths (Q3/Q4: use new crane dimensions as-is) ───────────
-                this.minLength = 22; // rotatingLen only — no extension segment
-                this.maxLength = 145; // covers max carriage reach ~135px
+                this.pivotY = this.baseY - 27;
+                this.minLength = 22;
+                this.maxLength = 145;
                 this.defaultAngle = Math.PI / 2;
                 this.currentAngle = this.defaultAngle;
                 this.currentLength = this.minLength;
@@ -862,9 +849,8 @@
                 this.state = 'IDLE';
                 this.timer = 0;
                 this.currentCarriage = -1;
-                // ── Speeds +15% (Q5) ─────────────────────────────────────────────
-                this.rotateSpeed = 3.7588; // was 3.2685
-                this.extendSpeed = 208.08; // was 180.94
+                this.rotateSpeed = 3.7588;
+                this.extendSpeed = 208.08;
                 this.pickTarget = {x: 0, y: 0};
                 this.dropTarget = {x: 0, y: 0};
             }
@@ -881,13 +867,10 @@
                 const len = Math.min(this.maxLength, Math.max(this.minLength, Math.hypot(dx, dy)));
                 return { angle: ang, length: len };
             }
-            // Shortest signed delta from currentAngle to targetAngle, in (-π, π].
-            // JS's % is a remainder (sign follows dividend), so the classic
-            // `((d+π) % 2π) - π` breaks for raw deltas < -π — use euclidean modulo instead.
             shortestAngleDelta() {
                 let d = this.targetAngle - this.currentAngle;
-                d = ((d % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI); // -> [0, 2π)
-                if (d > Math.PI) d -= 2 * Math.PI; // -> (-π, π]
+                d = ((d % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+                if (d > Math.PI) d -= 2 * Math.PI;
                 return d;
             }
             angleSettled() {
@@ -922,14 +905,18 @@
             }
             preparePick() {
                 if (this.type === 'top') {
-                    this.pickTarget = {x: TOP_STORAGE_X + STORAGE_WIDTH / 2, y: TOP_STORAGE_Y + STORAGE_HEIGHT / 2};
+                    if (topStorageCount > 0) {
+                        // ACCURATE: aim at exact center of the LAST block in storage (most recently added)
+                        const slotIdx = topStorageCount - 1;
+                        const pos = getTopStorageSlotPosition(slotIdx);
+                        this.pickTarget = {x: pos.x, y: pos.y};
+                    }
                 } else {
                     const loadedIdx = trainBlocks.findIndex(b => b);
                     if (loadedIdx === -1) return false;
                     this.currentCarriage = loadedIdx;
                     const carriageOffset = CARRIAGE_SEPARATION * (loadedIdx + 1);
                     const pos = getPosition(distance - carriageOffset);
-                    // Q6: cross center aligns to block center — use pos.x, pos.y (not pos.y - 8)
                     this.pickTarget = {x: pos.x, y: pos.y};
                 }
                 const aim = this.aimAt(this.pickTarget.x, this.pickTarget.y);
@@ -957,11 +944,13 @@
                         this.currentCarriage = emptyIdx;
                         const carriageOffset = CARRIAGE_SEPARATION * (emptyIdx + 1);
                         const pos = getPosition(distance - carriageOffset);
-                        // Q6: cross center aligns to block center — use pos.x, pos.y (not pos.y - 8)
                         this.dropTarget = {x: pos.x, y: pos.y};
                     }
                 } else {
-                    this.dropTarget = {x: BOTTOM_STORAGE_X + STORAGE_WIDTH / 2, y: BOTTOM_STORAGE_Y + STORAGE_HEIGHT / 2};
+                    // ACCURATE: aim at exact center of the NEXT empty slot in bottom storage
+                    const slotIdx = bottomStorageCount;
+                    const pos = getBottomStorageSlotPosition(slotIdx);
+                    this.dropTarget = {x: pos.x, y: pos.y};
                 }
                 const aim = this.aimAt(this.dropTarget.x, this.dropTarget.y);
                 this.targetAngle = aim.angle;
@@ -1059,15 +1048,6 @@
                 }
             }
             draw() {
-                // ── New crane visual ─────────────────────────────────────────────────
-                // Dimensions match design file exactly (Q3/Q4: as-is, no rescaling):
-                // base: w=26, h=10, center-bottom anchor at (baseX, baseY)
-                // static arm: w=8, h=17, yellow, sits from baseY-10 upward
-                // ball joint: r=6, dark grey, at (pivotX, pivotY) = (baseX, baseY-27)
-                // rotating boom: len=22 (half-boom from design), w=7, grey
-                // extension: w=5.5, length = max(0, currentLength - 22)
-                // cross head: 25px cross rotated 45° at (hookX, hookY), world-upright (Q6)
-                // carried block: 13×13px centered on hookX, hookY (Q6: cross center = block center)
                 const staticArmLen = 17;
                 const baseH = 9;
                 const rotatingLen = 22;
@@ -1076,12 +1056,10 @@
                 const ballR = 6;
                 const crossScale = 0.36;
                 const extension = Math.max(0, this.currentLength - rotatingLen);
-                // 1. CAUTION-STRIPE BASE
                 const baseLeft = this.baseX - 13;
                 const baseTop = this.baseY - baseH;
                 ctx.fillStyle = '#facc15';
                 ctx.fillRect(baseLeft, baseTop, 26, baseH);
-                // Hazard stripes clipped to base rect
                 ctx.save();
                 ctx.beginPath();
                 ctx.rect(baseLeft, baseTop, 26, baseH);
@@ -1099,39 +1077,32 @@
                     ctx.fill();
                 }
                 ctx.restore();
-                // Base border
                 ctx.strokeStyle = '#222';
                 ctx.lineWidth = 1;
                 ctx.strokeRect(baseLeft, baseTop, 26, baseH);
-                // 2. STATIC YELLOW VERTICAL ARM (above base, below ball joint)
                 ctx.fillStyle = '#f1c40f';
                 ctx.fillRect(this.baseX - 4, this.baseY - baseH - staticArmLen, 8, staticArmLen);
                 ctx.strokeStyle = '#555555';
                 ctx.lineWidth = 1.2;
                 ctx.strokeRect(this.baseX - 4, this.baseY - baseH - staticArmLen, 8, staticArmLen);
-                // 3. ROTATING BOOM + EXTENSION (pivots from pivotX, pivotY)
                 ctx.save();
                 ctx.translate(this.pivotX, this.pivotY);
                 ctx.rotate(this.currentAngle);
-                // Grey rotating boom
                 ctx.fillStyle = '#7f8c8d';
                 ctx.fillRect(0, -armW / 2, rotatingLen, armW);
                 ctx.strokeStyle = '#555';
                 ctx.lineWidth = 1;
                 ctx.strokeRect(0, -armW / 2, rotatingLen, armW);
-                // Extension segment (when arm is longer than rotatingLen)
                 if (extension > 0) {
                     ctx.fillStyle = '#95a5a6';
                     ctx.fillRect(rotatingLen, -extW / 2, extension, extW);
                     ctx.strokeRect(rotatingLen, -extW / 2, extension, extW);
                 }
                 ctx.restore();
-                // 4. BALL JOINT — drawn after boom so it sits on top visually
                 ctx.fillStyle = '#555555';
                 ctx.beginPath();
                 ctx.arc(this.pivotX, this.pivotY, ballR, 0, Math.PI * 2);
                 ctx.fill();
-                // 5. CARRIED BLOCK — drawn before cross so cross paints over it
                 if (this.isCarrying) {
                     const bSize = 13;
                     ctx.fillStyle = COLORS.quarryMain;
@@ -1141,7 +1112,6 @@
                     ctx.fillStyle = COLORS.quarryDeep;
                     ctx.fillRect(this.hookX - 1.5, this.hookY - 1.5, 3, 3);
                 }
-                // 6. CROSS HEAD — always drawn last so it sits on top of carried block and everything else
                 this.drawCross();
             }
             drawCross() {
