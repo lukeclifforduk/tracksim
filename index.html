@@ -34,7 +34,7 @@
         const CARRIAGE_WIDTH = 20;
         const CARRIAGE_SEPARATION = 36;
         // Train Speed and State
-        let baseSpeed = 265;
+        let baseSpeed = 275;
         let currentSpeed = baseSpeed;
         let trainState = 'MOVING';
         let trainStopTimer = 0;
@@ -327,7 +327,7 @@
                 this.approachBudget = 0;
                 this.safetyNetTarget = null;
                 this.safetyNetTriggerIndex = -1;
-                this.speed = 61.75;
+                this.speed = 61;
                 this.parkedTime = 0;
             }
             update(dt) {
@@ -479,7 +479,7 @@
                             if (this.routeIndex >= this.route.length) {
                                 this.angle = this.type === 'top' ? -Math.PI / 2 : Math.PI / 2;
                                 this.state = 'PARKED';
-                                this.timer = Math.random() * 3 + 1.5;
+                                this.timer = Math.random() * 3.1 + 1.6;
                                 this.parkedTime = 0;
                                 if (this.type === 'top' && !this.hasBlock && !topBlocks.some(b => b.active)) {
                                     this.timer = 999999;
@@ -615,7 +615,7 @@
                 this.state = 'HOME';
                 this.idleTimer = 0;
                 this.carrying = false;
-                this.speed = 65.1;
+                this.speed = 62;
                 this.nextTask = null;
                 this.targetTruck = null;
                 if (type === 'top') {
@@ -642,13 +642,22 @@
             stationWaypoints() {
                 const FORKLIFT_LENGTH = 22;
                 const cx = STATION_X + STATION_WIDTH / 2;
+                // storageSide.y must sit on the exact y the forklift travels when driving
+                // straight into row 3 (middle). That line is slot_row2_y - carry_y_component,
+                // where carry_y_component = FORKLIFT_CARRY_LOCAL_Y * cos(π) = 1.35.
+                // slot_row2_y = TOP_STORAGE_Y + 5 + 2*14 + 6.5 = TOP_STORAGE_Y + 39.5
+                // → entry line y = TOP_STORAGE_Y + 39.5 - 1.35 = TOP_STORAGE_Y + 38.15
+                const TOP_ENTRY_Y  = TOP_STORAGE_Y + 38.15;
+                // Mirror for bottom: slot_row2_y = BOTTOM_STORAGE_Y + 39.5, angle 0.
+                // carry_y_component = FORKLIFT_CARRY_LOCAL_Y * cos(0) = -1.35 → entry y = +40.85
+                const BOT_ENTRY_Y  = BOTTOM_STORAGE_Y + 40.85;
                 if (this.type === 'top') {
                     const parkingSide = { x: cx, y: TOP_Y - 108 + FORKLIFT_LENGTH };
-                    const storageSide = { x: STATION_X + FORKLIFT_LENGTH, y: TOP_STORAGE_Y + STORAGE_HEIGHT / 2 };
+                    const storageSide = { x: STATION_X + FORKLIFT_LENGTH, y: TOP_ENTRY_Y };
                     return { parkingSide, storageSide };
                 } else {
                     const parkingSide = { x: cx, y: BOTTOM_Y + 108 - FORKLIFT_LENGTH };
-                    const storageSide = { x: STATION_X + STATION_WIDTH - FORKLIFT_LENGTH, y: BOTTOM_STORAGE_Y + STORAGE_HEIGHT / 2 };
+                    const storageSide = { x: STATION_X + STATION_WIDTH - FORKLIFT_LENGTH, y: BOT_ENTRY_Y };
                     return { parkingSide, storageSide };
                 }
             }
@@ -715,28 +724,26 @@
                     const slotIdx = bottomStorageCount - 1;
                     const slot = getBottomStorageSlotPosition(slotIdx);
                     const row = Math.floor(slotIdx / 5);
-                    const middleY = BOTTOM_STORAGE_Y + STORAGE_HEIGHT / 2;
+                    // entryY matches storageSide.y — the y the forklift is already on.
+                    const entryY = BOTTOM_STORAGE_Y + 40.85;
                     if (row === 2) {
-                        // Final approach: angle 0 (right). Entry y must equal stop y.
+                        // Middle row: already on the correct y, drive straight in.
                         const stop = forkliftStopPos(slot.x, slot.y, 0);
                         this.path = [
-                            { x: this.x, y: stop.y },
                             { x: stop.x, y: stop.y }
                         ];
                     } else if (row < 2) {
-                        // Final approach: angle -π/2 (up). Turn point at stop.x, middleY.
+                        // Upper rows: travel along entry line to column, then turn up.
                         const stop = forkliftStopPos(slot.x, slot.y, -Math.PI / 2);
                         this.path = [
-                            { x: this.x, y: middleY },
-                            { x: stop.x, y: middleY },
+                            { x: stop.x, y: entryY },
                             { x: stop.x, y: stop.y }
                         ];
                     } else {
-                        // Final approach: angle π/2 (down).
+                        // Lower rows: travel along entry line to column, then turn down.
                         const stop = forkliftStopPos(slot.x, slot.y, Math.PI / 2);
                         this.path = [
-                            { x: this.x, y: middleY },
-                            { x: stop.x, y: middleY },
+                            { x: stop.x, y: entryY },
                             { x: stop.x, y: stop.y }
                         ];
                     }
@@ -784,28 +791,26 @@
                     const slotIdx = Math.min(topStorageCount, STORAGE_CAPACITY - 1);
                     const slot = getTopStorageSlotPosition(slotIdx);
                     const row = Math.floor(slotIdx / 5);
-                    const middleY = TOP_STORAGE_Y + STORAGE_HEIGHT / 2;
+                    // entryY matches storageSide.y — the y the forklift is already on.
+                    const entryY = TOP_STORAGE_Y + 38.15;
                     if (row === 2) {
-                        // Final approach: angle π (left). Entry y equals stop y.
+                        // Middle row: already on the correct y, drive straight in.
                         const stop = forkliftStopPos(slot.x, slot.y, Math.PI);
                         this.path = [
-                            { x: this.x, y: stop.y },
                             { x: stop.x, y: stop.y }
                         ];
                     } else if (row < 2) {
-                        // Upper rows: turn up. Final approach angle -π/2.
+                        // Upper rows: travel along entry line to column, then turn up.
                         const stop = forkliftStopPos(slot.x, slot.y, -Math.PI / 2);
                         this.path = [
-                            { x: this.x, y: middleY },
-                            { x: stop.x, y: middleY },
+                            { x: stop.x, y: entryY },
                             { x: stop.x, y: stop.y }
                         ];
                     } else {
-                        // Lower rows: turn down. Final approach angle π/2.
+                        // Lower rows: travel along entry line to column, then turn down.
                         const stop = forkliftStopPos(slot.x, slot.y, Math.PI / 2);
                         this.path = [
-                            { x: this.x, y: middleY },
-                            { x: stop.x, y: middleY },
+                            { x: stop.x, y: entryY },
                             { x: stop.x, y: stop.y }
                         ];
                     }
@@ -972,7 +977,7 @@
                 this.state = 'IDLE';
                 this.timer = 0;
                 this.currentCarriage = -1;
-                this.rotateSpeed = 3.7588;
+                this.rotateSpeed = 4.2;
                 this.extendSpeed = 208.08;
                 this.pickTarget = {x: 0, y: 0};
                 this.dropTarget = {x: 0, y: 0};
@@ -1116,7 +1121,7 @@
                     case 'EXTEND_TO_PICK':
                         if (this.armSettled()) {
                             this.state = 'PICKING';
-                            this.timer = 0.45;
+                            this.timer = 0.35;
                         }
                         break;
                     case 'PICKING':
@@ -1143,7 +1148,7 @@
                     case 'EXTEND_TO_DROP':
                         if (this.armSettled()) {
                             this.state = 'DROPPING';
-                            this.timer = 0.45;
+                            this.timer = 0.35;
                         }
                         break;
                     case 'DROPPING':
@@ -1597,7 +1602,8 @@
             drawQuarryBlocks();
             drawStorages();
             drawStations();
-            for (let t of trucks) t.draw();
+            for (let t of trucks) { if (t.state === 'PARKED' && !t.hasBlock) t.draw(); }
+            for (let t of trucks) { if (t.state !== 'PARKED' || t.hasBlock) t.draw(); }
             for (let f of forklifts) f.draw();
             drawRails();
             const enginePos = getPosition(distance);
