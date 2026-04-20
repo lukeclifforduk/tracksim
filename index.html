@@ -123,11 +123,26 @@
             const sy = BOTTOM_STORAGE_Y + 5 + Math.floor(index / cols) * cellStep + 6.5;
             return { x: sx, y: sy };
         }
-        // NEW: carry offset — how far in front of the forklift's origin the
-        // block on its forks is rendered (accounting for the 0.9 scale in draw()).
-        // Block drawn at fillRect(7, -8, 13, 13) → local center (13.5, -1.5) → scaled ≈ (12.15, -1.35).
-        // Using 12 gives the forks-over-block look the user asked for.
-        const FORKLIFT_CARRY_OFFSET = 12;
+        // Carry offset — where the block-on-forks is drawn in the forklift's local frame.
+        // fillRect(7, -8, 13, 13) centers the block at (13.5, -1.5); the draw transform
+        // scales by 0.9, so the world-space offset is (12.15, -1.35).
+        // Because the body is not y-symmetric (forks along y≈-7 and y≈+3), the block sits
+        // slightly above centre. We must rotate BOTH components by the approach angle to
+        // get a correctly centred stop position.
+        const FORKLIFT_CARRY_LOCAL_X = 12.15;
+        const FORKLIFT_CARRY_LOCAL_Y = -1.35;
+        const FORKLIFT_CARRY_OFFSET = FORKLIFT_CARRY_LOCAL_X; // legacy alias (unused now)
+        // Given a world-space target (block position) and the cardinal angle the forklift
+        // will be facing on arrival, return the forklift body position that makes the
+        // block-on-forks land exactly on the target.
+        function forkliftStopPos(targetX, targetY, approachAngle) {
+            const cos = Math.cos(approachAngle);
+            const sin = Math.sin(approachAngle);
+            // Rotate the local carry offset into world space, then subtract from target.
+            const wx = FORKLIFT_CARRY_LOCAL_X * cos - FORKLIFT_CARRY_LOCAL_Y * sin;
+            const wy = FORKLIFT_CARRY_LOCAL_X * sin + FORKLIFT_CARRY_LOCAL_Y * cos;
+            return { x: targetX - wx, y: targetY - wy };
+        }
         // NEW: exact world position of the block slot on a truck.
         // In the truck's local frame the block is drawn at fillRect(-20, -6, 13, 13),
         // so its center sits at (-13.5, 0.5). Rotate by truck.angle and translate.
@@ -676,13 +691,13 @@
                     if (bestTruck) {
                         this.targetTruck = bestTruck;
                         this.nextTask = 'UNLOAD_TRUCK';
-                        // Aim forks precisely over the block sitting on the truck's trailer.
-                        // Use a two-stage L-path so the final approach is cardinal (angle = -π/2),
-                        // which makes the fork-over-block offset exact.
+                        // Stop position accounts for the forklift's asymmetric body and the
+                        // 0.9 draw scale — the block on the forks lands exactly on the truck slot.
                         const slot = getTruckBlockSlotPosition(bestTruck);
+                        const stop = forkliftStopPos(slot.x, slot.y, -Math.PI / 2);
                         this.path = [
-                            { x: slot.x, y: this.y },                                // line up with target x first
-                            { x: slot.x, y: slot.y + FORKLIFT_CARRY_OFFSET }         // then drive up, stop 12px short
+                            { x: stop.x, y: this.y },   // line up with final-approach x
+                            { x: stop.x, y: stop.y }    // drive up to centred stop
                         ];
                         this.pathIndex = 0;
                         this.departureAngle = -Math.PI / 2;
@@ -695,28 +710,34 @@
                     let hasEmptyTruck = trucks.some(t => t.type === 'bottom' && t.state === 'PARKED' && !t.hasBlock);
                     if (!hasEmptyTruck) { this.goHomeIfNotThere(); return; }
                     this.nextTask = 'PICK_STORAGE';
-                    // Enter horizontally along the middle row, then turn up/down (or continue
-                    // straight) depending on which row the target block sits in.
+                    // Enter along storage centre-line, then turn or continue depending on row.
+                    // Stop positions use forkliftStopPos so the block centres on the slot exactly.
                     const slotIdx = bottomStorageCount - 1;
                     const slot = getBottomStorageSlotPosition(slotIdx);
                     const row = Math.floor(slotIdx / 5);
                     const middleY = BOTTOM_STORAGE_Y + STORAGE_HEIGHT / 2;
                     if (row === 2) {
+                        // Final approach: angle 0 (right). Entry y must equal stop y.
+                        const stop = forkliftStopPos(slot.x, slot.y, 0);
                         this.path = [
-                            { x: this.x, y: middleY },
-                            { x: slot.x - FORKLIFT_CARRY_OFFSET, y: middleY }
+                            { x: this.x, y: stop.y },
+                            { x: stop.x, y: stop.y }
                         ];
                     } else if (row < 2) {
+                        // Final approach: angle -π/2 (up). Turn point at stop.x, middleY.
+                        const stop = forkliftStopPos(slot.x, slot.y, -Math.PI / 2);
                         this.path = [
                             { x: this.x, y: middleY },
-                            { x: slot.x, y: middleY },
-                            { x: slot.x, y: slot.y + FORKLIFT_CARRY_OFFSET }
+                            { x: stop.x, y: middleY },
+                            { x: stop.x, y: stop.y }
                         ];
                     } else {
+                        // Final approach: angle π/2 (down).
+                        const stop = forkliftStopPos(slot.x, slot.y, Math.PI / 2);
                         this.path = [
                             { x: this.x, y: middleY },
-                            { x: slot.x, y: middleY },
-                            { x: slot.x, y: slot.y - FORKLIFT_CARRY_OFFSET }
+                            { x: stop.x, y: middleY },
+                            { x: stop.x, y: stop.y }
                         ];
                     }
                     this.pathIndex = 0;
@@ -736,6 +757,9 @@
                 const dx = wp.x - this.x;
                 const dy = wp.y - this.y;
                 const dist = Math.hypot(dx, dy);
+                // Always update facing before moving/snapping, so short legs (e.g. a tight
+                // turn into an adjacent storage row) still register as a proper turn.
+                if (dist > 0.01) this.angle = Math.atan2(dy, dx);
                 if (dist < 3) {
                     this.x = wp.x;
                     this.y = wp.y;
@@ -743,7 +767,6 @@
                     if (this.pathIndex >= this.path.length) return true;
                     return false;
                 }
-                this.angle = Math.atan2(dy, dx);
                 const move = Math.min(this.speed * dt, dist);
                 this.x += Math.cos(this.angle) * move;
                 this.y += Math.sin(this.angle) * move;
@@ -756,31 +779,34 @@
             arriveAtCenter() {
                 if (this.nextTask === 'GO_TO_DROP_TOP') {
                     this.nextTask = 'DROP_STORAGE';
-                    // Enter horizontally along the middle row, then turn up/down (or continue
-                    // straight) depending on which row the target slot sits in.
+                    // Enter along storage centre-line, then turn or continue depending on row.
+                    // Stop positions use forkliftStopPos so the block centres on the slot exactly.
                     const slotIdx = Math.min(topStorageCount, STORAGE_CAPACITY - 1);
                     const slot = getTopStorageSlotPosition(slotIdx);
                     const row = Math.floor(slotIdx / 5);
                     const middleY = TOP_STORAGE_Y + STORAGE_HEIGHT / 2;
                     if (row === 2) {
-                        // Middle row: drive straight in until forks are over the slot.
+                        // Final approach: angle π (left). Entry y equals stop y.
+                        const stop = forkliftStopPos(slot.x, slot.y, Math.PI);
                         this.path = [
-                            { x: this.x, y: middleY },
-                            { x: slot.x + FORKLIFT_CARRY_OFFSET, y: middleY }
+                            { x: this.x, y: stop.y },
+                            { x: stop.x, y: stop.y }
                         ];
                     } else if (row < 2) {
-                        // Upper rows: stop under slot's column, turn up, drive up.
+                        // Upper rows: turn up. Final approach angle -π/2.
+                        const stop = forkliftStopPos(slot.x, slot.y, -Math.PI / 2);
                         this.path = [
                             { x: this.x, y: middleY },
-                            { x: slot.x, y: middleY },
-                            { x: slot.x, y: slot.y + FORKLIFT_CARRY_OFFSET }
+                            { x: stop.x, y: middleY },
+                            { x: stop.x, y: stop.y }
                         ];
                     } else {
-                        // Lower rows: stop under slot's column, turn down, drive down.
+                        // Lower rows: turn down. Final approach angle π/2.
+                        const stop = forkliftStopPos(slot.x, slot.y, Math.PI / 2);
                         this.path = [
                             { x: this.x, y: middleY },
-                            { x: slot.x, y: middleY },
-                            { x: slot.x, y: slot.y - FORKLIFT_CARRY_OFFSET }
+                            { x: stop.x, y: middleY },
+                            { x: stop.x, y: stop.y }
                         ];
                     }
                     this.pathIndex = 0;
@@ -792,12 +818,12 @@
                 } else if (this.nextTask === 'GO_TO_DROP_BOTTOM') {
                     if (this.targetTruck && this.targetTruck.state === 'PARKED' && !this.targetTruck.hasBlock) {
                         this.nextTask = 'DELIVER_TRUCK';
-                        // Aim forks precisely over the empty trailer slot on this specific truck.
-                        // Two-stage L-path: line up with truck.x, then drive down and stop 12px short.
+                        // Stop position centres the block on the truck's trailer exactly.
                         const slot = getTruckBlockSlotPosition(this.targetTruck);
+                        const stop = forkliftStopPos(slot.x, slot.y, Math.PI / 2);
                         this.path = [
-                            { x: slot.x, y: this.y },
-                            { x: slot.x, y: slot.y - FORKLIFT_CARRY_OFFSET }
+                            { x: stop.x, y: this.y },
+                            { x: stop.x, y: stop.y }
                         ];
                         this.pathIndex = 0;
                         this.departureAngle = Math.PI / 2;
@@ -826,9 +852,19 @@
                     else if (this.x > STATION_X + STATION_WIDTH) comingFromParking = false;
                     else comingFromParking = (this.y >= BOTTOM_Y + 69);
                 }
+                // When heading back toward parking to reach a truck, skip the parkingSide
+                // midpoint. The truck-bound L-path handles alignment directly from storageSide,
+                // avoiding the "drive to centre, backtrack to bay" wobble.
+                const headingToTruck = (nextTaskAfter === 'GO_TO_DROP_BOTTOM' ||
+                                        nextTaskAfter === 'POST_DROP_TOP');
                 const first = comingFromParking ? wps.parkingSide : wps.storageSide;
                 const second = comingFromParking ? wps.storageSide : wps.parkingSide;
-                this.path = [first, second];
+                if (headingToTruck && !comingFromParking) {
+                    // Coming from storage, heading to a truck: stop at storageSide only.
+                    this.path = [first];
+                } else {
+                    this.path = [first, second];
+                }
                 this.pathIndex = 0;
                 this.departureAngle = this.homeAngle;
                 this.state = 'TRANSIT_TO_CENTER';
