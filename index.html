@@ -123,6 +123,23 @@
             const sy = BOTTOM_STORAGE_Y + 5 + Math.floor(index / cols) * cellStep + 6.5;
             return { x: sx, y: sy };
         }
+        // NEW: carry offset — how far in front of the forklift's origin the
+        // block on its forks is rendered (accounting for the 0.9 scale in draw()).
+        // Block drawn at fillRect(7, -8, 13, 13) → local center (13.5, -1.5) → scaled ≈ (12.15, -1.35).
+        // Using 12 gives the forks-over-block look the user asked for.
+        const FORKLIFT_CARRY_OFFSET = 12;
+        // NEW: exact world position of the block slot on a truck.
+        // In the truck's local frame the block is drawn at fillRect(-20, -6, 13, 13),
+        // so its center sits at (-13.5, 0.5). Rotate by truck.angle and translate.
+        function getTruckBlockSlotPosition(truck) {
+            const lx = -13.5, ly = 0.5;
+            const cos = Math.cos(truck.angle);
+            const sin = Math.sin(truck.angle);
+            return {
+                x: truck.x + lx * cos - ly * sin,
+                y: truck.y + lx * sin + ly * cos
+            };
+        }
         // Helper: closest point on a line segment to (px, py)
         function closestPointOnSegment(px, py, ax, ay, bx, by) {
             const dx = bx - ax, dy = by - ay;
@@ -659,7 +676,16 @@
                     if (bestTruck) {
                         this.targetTruck = bestTruck;
                         this.nextTask = 'UNLOAD_TRUCK';
-                        this.buildPathTo(bestTruck.x, bestTruck.y, Math.PI / 2);
+                        // Aim forks precisely over the block sitting on the truck's trailer.
+                        // Use a two-stage L-path so the final approach is cardinal (angle = -π/2),
+                        // which makes the fork-over-block offset exact.
+                        const slot = getTruckBlockSlotPosition(bestTruck);
+                        this.path = [
+                            { x: slot.x, y: this.y },                                // line up with target x first
+                            { x: slot.x, y: slot.y + FORKLIFT_CARRY_OFFSET }         // then drive up, stop 12px short
+                        ];
+                        this.pathIndex = 0;
+                        this.departureAngle = -Math.PI / 2;
                         this.state = 'MOVING';
                         return;
                     }
@@ -669,7 +695,32 @@
                     let hasEmptyTruck = trucks.some(t => t.type === 'bottom' && t.state === 'PARKED' && !t.hasBlock);
                     if (!hasEmptyTruck) { this.goHomeIfNotThere(); return; }
                     this.nextTask = 'PICK_STORAGE';
-                    this.buildPathTo(BOTTOM_STORAGE_X + STORAGE_WIDTH / 2, BOTTOM_STORAGE_Y + STORAGE_HEIGHT / 2, -Math.PI / 2);
+                    // Enter horizontally along the middle row, then turn up/down (or continue
+                    // straight) depending on which row the target block sits in.
+                    const slotIdx = bottomStorageCount - 1;
+                    const slot = getBottomStorageSlotPosition(slotIdx);
+                    const row = Math.floor(slotIdx / 5);
+                    const middleY = BOTTOM_STORAGE_Y + STORAGE_HEIGHT / 2;
+                    if (row === 2) {
+                        this.path = [
+                            { x: this.x, y: middleY },
+                            { x: slot.x - FORKLIFT_CARRY_OFFSET, y: middleY }
+                        ];
+                    } else if (row < 2) {
+                        this.path = [
+                            { x: this.x, y: middleY },
+                            { x: slot.x, y: middleY },
+                            { x: slot.x, y: slot.y + FORKLIFT_CARRY_OFFSET }
+                        ];
+                    } else {
+                        this.path = [
+                            { x: this.x, y: middleY },
+                            { x: slot.x, y: middleY },
+                            { x: slot.x, y: slot.y - FORKLIFT_CARRY_OFFSET }
+                        ];
+                    }
+                    this.pathIndex = 0;
+                    this.departureAngle = 0;
                     this.state = 'MOVING';
                 }
             }
@@ -705,7 +756,35 @@
             arriveAtCenter() {
                 if (this.nextTask === 'GO_TO_DROP_TOP') {
                     this.nextTask = 'DROP_STORAGE';
-                    this.buildPathTo(TOP_STORAGE_X + STORAGE_WIDTH / 2, TOP_STORAGE_Y + STORAGE_HEIGHT / 2, Math.PI);
+                    // Enter horizontally along the middle row, then turn up/down (or continue
+                    // straight) depending on which row the target slot sits in.
+                    const slotIdx = Math.min(topStorageCount, STORAGE_CAPACITY - 1);
+                    const slot = getTopStorageSlotPosition(slotIdx);
+                    const row = Math.floor(slotIdx / 5);
+                    const middleY = TOP_STORAGE_Y + STORAGE_HEIGHT / 2;
+                    if (row === 2) {
+                        // Middle row: drive straight in until forks are over the slot.
+                        this.path = [
+                            { x: this.x, y: middleY },
+                            { x: slot.x + FORKLIFT_CARRY_OFFSET, y: middleY }
+                        ];
+                    } else if (row < 2) {
+                        // Upper rows: stop under slot's column, turn up, drive up.
+                        this.path = [
+                            { x: this.x, y: middleY },
+                            { x: slot.x, y: middleY },
+                            { x: slot.x, y: slot.y + FORKLIFT_CARRY_OFFSET }
+                        ];
+                    } else {
+                        // Lower rows: stop under slot's column, turn down, drive down.
+                        this.path = [
+                            { x: this.x, y: middleY },
+                            { x: slot.x, y: middleY },
+                            { x: slot.x, y: slot.y - FORKLIFT_CARRY_OFFSET }
+                        ];
+                    }
+                    this.pathIndex = 0;
+                    this.departureAngle = Math.PI;
                     this.state = 'MOVING';
                 } else if (this.nextTask === 'POST_DROP_TOP') {
                     this.nextTask = null;
@@ -713,7 +792,15 @@
                 } else if (this.nextTask === 'GO_TO_DROP_BOTTOM') {
                     if (this.targetTruck && this.targetTruck.state === 'PARKED' && !this.targetTruck.hasBlock) {
                         this.nextTask = 'DELIVER_TRUCK';
-                        this.buildPathTo(this.targetTruck.x, this.targetTruck.y, -Math.PI / 2);
+                        // Aim forks precisely over the empty trailer slot on this specific truck.
+                        // Two-stage L-path: line up with truck.x, then drive down and stop 12px short.
+                        const slot = getTruckBlockSlotPosition(this.targetTruck);
+                        this.path = [
+                            { x: slot.x, y: this.y },
+                            { x: slot.x, y: slot.y - FORKLIFT_CARRY_OFFSET }
+                        ];
+                        this.pathIndex = 0;
+                        this.departureAngle = Math.PI / 2;
                         this.state = 'MOVING';
                     } else {
                         if (this.carrying) { bottomStorageCount = Math.min(STORAGE_CAPACITY, bottomStorageCount + 1); this.carrying = false; }
