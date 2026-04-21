@@ -15,21 +15,13 @@
     <script>
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
- 
+
         // ─────────────────────────────────────────────────────────────────────
         // SIMULATION LOGIC
         // ─────────────────────────────────────────────────────────────────────
-        // =============================================================================
-// sim-core.js  —  Pure simulation logic extracted from Train & Truck SIM
-// No canvas, no DOM, no rendering. Exports a factory function that returns
-// a fully-initialised simulation instance you can tick forward with step(dt).
-// =============================================================================
- 
+
 function createSim() {
- 
-  // ---------------------------------------------------------------------------
-  // Canvas & track constants
-  // ---------------------------------------------------------------------------
+
   const WIDTH  = 1200;
   const HEIGHT = 700;
   const CENTER_X = 600;
@@ -41,185 +33,139 @@ function createSim() {
   const TOP_Y    = CENTER_Y - CURVE_RADIUS;
   const BOTTOM_Y = CENTER_Y + CURVE_RADIUS;
   const TOTAL_TRACK_LENGTH = 2 * STRAIGHT_LENGTH + 2 * Math.PI * CURVE_RADIUS;
- 
-  // Train & carriage dimensions
+
   const TRAIN_LENGTH        = 42;
   const CARRIAGE_LENGTH     = 26;
   const CARRIAGE_WIDTH      = 20;
   const CARRIAGE_SEPARATION = 36;
- 
-  // Train speed and state
+
   let baseSpeed           = 275;
   let currentSpeed        = baseSpeed;
   let trainState          = 'MOVING';
   let trainStopTimer      = 0;
-  let distance            = 120;   // initial track offset so train starts mid-straight
+  let distance            = 120;
   let trainAtStation      = null;
   const STOP_DIST_1       = 310;
   const STOP_DIST_2       = STOP_DIST_1 + STRAIGHT_LENGTH + Math.PI * CURVE_RADIUS;
   const BRAKE_DISTANCE    = 185;
   const ACCELERATION_RATE = 135;
-  const TRAIN_MIN_SPEED   = 8;     // px/s — speed floor applied during braking
-  const TRAIN_STOP_TIMER_SENTINEL = 999; // placeholder; actual release is condition-driven
- 
-  // ---------------------------------------------------------------------------
-  // Station geometry
-  // Top station sits above TOP_Y; bottom station sits below BOTTOM_Y.
-  // Both share the same building height, with slightly different platform
-  // offsets (top platform is flush with the rail, bottom has a 4px gap).
-  // ---------------------------------------------------------------------------
+  const TRAIN_MIN_SPEED   = 8;
+  const TRAIN_STOP_TIMER_SENTINEL = 999;
+
   const STATION_X              = 529;
   const STATION_WIDTH          = 142;
-  const TOP_PLATFORM_HEIGHT    = 30;   // px — top station platform strip height
-  const BOTTOM_PLATFORM_OFFSET = 4;    // px — gap below BOTTOM_Y before bottom platform
-  const BOTTOM_PLATFORM_HEIGHT = 26;   // px — bottom station platform strip height
-  const BUILDING_HEIGHT        = 78;   // px — station building block (same for both)
-  const PARKING_GAP            = 4;    // px — gap between building base and parking lot
-  const STATION_TOTAL_HEIGHT   = TOP_PLATFORM_HEIGHT + BUILDING_HEIGHT; // 108px
- 
-  // Parking lots sit directly above (top) / below (bottom) the station buildings
+  const TOP_PLATFORM_HEIGHT    = 30;
+  const BOTTOM_PLATFORM_OFFSET = 4;
+  const BOTTOM_PLATFORM_HEIGHT = 26;
+  const BUILDING_HEIGHT        = 78;
+  const PARKING_GAP            = 4;
+  const STATION_TOTAL_HEIGHT   = TOP_PLATFORM_HEIGHT + BUILDING_HEIGHT;
+
   const PARKING_WIDTH  = 120;
   const PARKING_HEIGHT = 55;
   const topParkingY    = TOP_Y    - TOP_PLATFORM_HEIGHT - BUILDING_HEIGHT - PARKING_HEIGHT - PARKING_GAP;
   const TOP_ROAD_Y     = topParkingY + PARKING_HEIGHT / 2;
   const bottomParkingY = BOTTOM_Y + BOTTOM_PLATFORM_OFFSET + BOTTOM_PLATFORM_HEIGHT + BUILDING_HEIGHT + PARKING_GAP;
   const BOTTOM_ROAD_Y  = bottomParkingY + PARKING_HEIGHT / 2;
- 
-  // Vertical midpoint of the station building — used by forklifts to decide
-  // which side of the station they are approaching from.
-  // Derived: STATION_TOTAL_HEIGHT - BUILDING_HEIGHT/2 = 108 - 39 = 69
-  const STATION_BUILDING_MID_OFFSET = STATION_TOTAL_HEIGHT - BUILDING_HEIGHT / 2; // 69
- 
-  // ---------------------------------------------------------------------------
-  // Storage areas (block buffers between quarry and train)
-  // ---------------------------------------------------------------------------
+
+  const STATION_BUILDING_MID_OFFSET = STATION_TOTAL_HEIGHT - BUILDING_HEIGHT / 2;
+
   const STORAGE_WIDTH         = 80;
   const STORAGE_HEIGHT        = 80;
   const STORAGE_COLS          = 5;
-  const STORAGE_CELL_STEP     = 14;   // px between cell origins
-  const STORAGE_CELL_MARGIN   = 5;    // px inset from storage box edge to first cell
-  const STORAGE_CELL_SIZE     = 13;   // px — rendered block size inside storage
-  const STORAGE_CELL_HALF     = STORAGE_CELL_SIZE / 2; // 6.5 — centre offset within cell
+  const STORAGE_CELL_STEP     = 14;
+  const STORAGE_CELL_MARGIN   = 5;
+  const STORAGE_CELL_SIZE     = 13;
+  const STORAGE_CELL_HALF     = STORAGE_CELL_SIZE / 2;
   const TOP_STORAGE_X         = STATION_X - 89 - 6;
   const TOP_STORAGE_Y         = TOP_Y - 112 - 3;
   const BOTTOM_STORAGE_X      = STATION_X + STATION_WIDTH + 18;
   const BOTTOM_STORAGE_Y      = BOTTOM_Y + 37 - 3;
   const STORAGE_CAPACITY      = 25;
- 
+
   let topStorageCount    = 0;
   let bottomStorageCount = 0;
   let trainBlocks        = [false, false, false, false, false];
- 
-  // ---------------------------------------------------------------------------
-  // Quarry grid settings
-  // ---------------------------------------------------------------------------
+
   const BLOCK_SIZE          = 18;
   const QUARRY_MAX_ROWS     = 19;
-  const QUARRY_EDGE_MARGIN  = 12;   // px from canvas edge to first column origin
-  const QUARRY_ROAD_MARGIN  = 9;    // px offset added to row/col index coords for road centreline
+  const QUARRY_EDGE_MARGIN  = 12;
+  const QUARRY_ROAD_MARGIN  = 9;
   const QUARRY_OFFSET_X     = QUARRY_EDGE_MARGIN;
   const QUARRY_OFFSET_Y     = TOP_ROAD_Y - 81;
   const BOTTOM_QUARRY_OFFSET_X = WIDTH - QUARRY_EDGE_MARGIN - BLOCK_SIZE;
   const BOTTOM_QUARRY_OFFSET_Y = BOTTOM_ROAD_Y + 45 + BLOCK_SIZE;
- 
+
   const TOP_QUARRY_COLS_PER_ROW = [18,19,19,18,17,18,17,16,16,15,14,13,12,12,11,11,9,6,5];
- 
-  // Road grid row/column indices (into the quarry grid)
-  const ROAD_ENTRY_ROW = 4;   // row closest to parking — main entry/exit
-  const ROAD_MID_ROW   = 9;   // shortcut cross-road at quarry mid-depth
-  const ROAD_FAR_ROW   = 14;  // far-end cross-road at quarry depth limit
-  const ROAD_LEFT_COL  = 3;   // left bounding column of road loop
-  const ROAD_RIGHT_COL = 13;  // right bounding column — connects to parking
- 
-  // Road centreline world coordinates (top quarry)
+
+  const ROAD_ENTRY_ROW = 4;
+  const ROAD_MID_ROW   = 9;
+  const ROAD_FAR_ROW   = 14;
+  const ROAD_LEFT_COL  = 3;
+  const ROAD_RIGHT_COL = 13;
+
   const topRow4Y      = TOP_ROAD_Y;
   const topRow14Y     = QUARRY_OFFSET_Y + ROAD_FAR_ROW   * BLOCK_SIZE + QUARRY_ROAD_MARGIN;
   const topMiddleRowY = QUARRY_OFFSET_Y + ROAD_MID_ROW   * BLOCK_SIZE + QUARRY_ROAD_MARGIN;
   const topCol3X      = QUARRY_OFFSET_X + ROAD_LEFT_COL  * BLOCK_SIZE + QUARRY_ROAD_MARGIN;
   const topCol13X     = QUARRY_OFFSET_X + ROAD_RIGHT_COL * BLOCK_SIZE + QUARRY_ROAD_MARGIN;
- 
-  // Road centreline world coordinates (bottom quarry — mirrored axes)
+
   const botRow4Y      = BOTTOM_ROAD_Y;
   const botRow14Y     = BOTTOM_QUARRY_OFFSET_Y - ROAD_FAR_ROW   * BLOCK_SIZE + QUARRY_ROAD_MARGIN;
   const botMiddleRowY = BOTTOM_QUARRY_OFFSET_Y - ROAD_MID_ROW   * BLOCK_SIZE + QUARRY_ROAD_MARGIN;
   const botCol3X      = BOTTOM_QUARRY_OFFSET_X - ROAD_LEFT_COL  * BLOCK_SIZE + QUARRY_ROAD_MARGIN;
   const botCol13X     = BOTTOM_QUARRY_OFFSET_X - ROAD_RIGHT_COL * BLOCK_SIZE + QUARRY_ROAD_MARGIN;
- 
-  // ---------------------------------------------------------------------------
-  // Forklift home positions (parked inside station building, beside crane)
-  // ---------------------------------------------------------------------------
-  const FORKLIFT_BODY_HALF  = 12;  // px — half-width of forklift body
-  const FORKLIFT_HOME_INSET = 2;   // px — margin from station edge to home bay
+
+  const FORKLIFT_BODY_HALF  = 12;
+  const FORKLIFT_HOME_INSET = 2;
   const TOP_FORKLIFT_HOME_X    = STATION_X + STATION_WIDTH - FORKLIFT_HOME_INSET - FORKLIFT_BODY_HALF - FORKLIFT_HOME_INSET;
   const TOP_FORKLIFT_HOME_Y    = (TOP_Y - STATION_TOTAL_HEIGHT) + FORKLIFT_HOME_INSET + 19 - 1;
   const BOTTOM_FORKLIFT_HOME_X = STATION_X + FORKLIFT_HOME_INSET + FORKLIFT_BODY_HALF + FORKLIFT_HOME_INSET;
   const BOTTOM_FORKLIFT_HOME_Y = (BOTTOM_Y + STATION_TOTAL_HEIGHT) - FORKLIFT_HOME_INSET - 19 + 1;
- 
-  // ---------------------------------------------------------------------------
-  // Forklift carry-offset geometry
-  // The block sits on the forks ahead of the forklift body centre.
-  // In the forklift's local frame (x = forward, y = lateral):
-  //   block centre is at (FORKLIFT_CARRY_LOCAL_X, FORKLIFT_CARRY_LOCAL_Y)
-  // Derived from draw call: fillRect(7,-8,13,13) at scale 0.9
-  //   → centre at local (7+6.5)*0.9=12.15, (-8+6.5)*0.9=-1.35
-  // ---------------------------------------------------------------------------
+
   const FORKLIFT_CARRY_LOCAL_X = 12.15;
   const FORKLIFT_CARRY_LOCAL_Y = -1.35;
- 
-  // Forklift storage entry Y — the horizontal centreline the forklift travels
-  // when approaching the middle row of the storage grid.
-  // Middle-row slot y-offset = STORAGE_CELL_MARGIN + 2*STORAGE_CELL_STEP + STORAGE_CELL_HALF = 39.5
-  // Top  (approach angle π):  entry = slot_y - LOCAL_Y*cos(π) = slot_y - 1.35 → offset 38.15
-  // Bottom (approach angle 0): entry = slot_y - LOCAL_Y*cos(0) = slot_y + 1.35 → offset 40.85
+
   const STORAGE_MIDDLE_ROW           = 2;
-  const STORAGE_MIDDLE_SLOT_Y_OFFSET = STORAGE_CELL_MARGIN + STORAGE_MIDDLE_ROW * STORAGE_CELL_STEP + STORAGE_CELL_HALF; // 39.5
-  const TOP_STORAGE_ENTRY_Y_OFFSET    = STORAGE_MIDDLE_SLOT_Y_OFFSET + FORKLIFT_CARRY_LOCAL_Y; // 38.15
-  const BOTTOM_STORAGE_ENTRY_Y_OFFSET = STORAGE_MIDDLE_SLOT_Y_OFFSET - FORKLIFT_CARRY_LOCAL_Y; // 40.85
- 
-  // ---------------------------------------------------------------------------
-  // Crane geometry
-  // ---------------------------------------------------------------------------
-  const CRANE_BASE_INSET      = 2;      // px from station edge to crane base centre
-  const CRANE_BASE_HALF_WIDTH = 13;     // px — half-width of crane base body
-  const CRANE_PIVOT_ABOVE_BASE = 27;    // px — pivot sits this far above baseY
-  const CRANE_MIN_ARM_LENGTH  = 22;     // px — retracted arm length
-  const CRANE_MAX_ARM_LENGTH  = 145;    // px — maximum arm extension
-  const CRANE_ROTATE_SPEED    = 4.2;    // rad/s
-  const CRANE_EXTEND_SPEED    = 208.08; // px/s
-  const CRANE_DWELL_TIME      = 0.35;   // s — pause at pick/drop point
-  const CRANE_BASE_INTO_BUILDING = 33;  // px — how far into the building body the bottom crane base sits
- 
-  // ---------------------------------------------------------------------------
-  // Truck & forklift behaviour constants
-  // ---------------------------------------------------------------------------
-  const TRUCK_SPEED            = 61;              // px/s
-  const TRUCK_COLLISION_RADIUS = 42;              // px — proximity check for blocking
-  const TRUCK_COLLISION_MIN    = 8;               // px — minimum dist to apply block check
-  const TRUCK_APPROACH_BUDGET  = 3 * BLOCK_SIZE;  // px — max deviation off-route to reach a block
-  const TRUCK_LOADING_TIME     = 1.0;             // s
-  const TRUCK_SCAN_RADIUS      = 5 * BLOCK_SIZE;  // px — proximity scan radius while driving
-  const TRUCK_DEPART_SENTINEL  = 999999;          // timer value that keeps truck parked indefinitely
-  const FORKLIFT_SPEED         = 62;              // px/s
-  const FORKLIFT_WORK_TIME     = 0.75;            // s — dwell at pick/drop point
-  const FORKLIFT_LENGTH        = 22;              // px — used for approach waypoint clearance
- 
-  // ---------------------------------------------------------------------------
-  // Geometry helpers
-  // ---------------------------------------------------------------------------
+  const STORAGE_MIDDLE_SLOT_Y_OFFSET = STORAGE_CELL_MARGIN + STORAGE_MIDDLE_ROW * STORAGE_CELL_STEP + STORAGE_CELL_HALF;
+  const TOP_STORAGE_ENTRY_Y_OFFSET    = STORAGE_MIDDLE_SLOT_Y_OFFSET + FORKLIFT_CARRY_LOCAL_Y;
+  const BOTTOM_STORAGE_ENTRY_Y_OFFSET = STORAGE_MIDDLE_SLOT_Y_OFFSET - FORKLIFT_CARRY_LOCAL_Y;
+
+  const CRANE_BASE_INSET      = 2;
+  const CRANE_BASE_HALF_WIDTH = 13;
+  const CRANE_PIVOT_ABOVE_BASE = 27;
+  const CRANE_MIN_ARM_LENGTH  = 22;
+  const CRANE_MAX_ARM_LENGTH  = 145;
+  const CRANE_ROTATE_SPEED    = 4.2;
+  const CRANE_EXTEND_SPEED    = 208.08;
+  const CRANE_DWELL_TIME      = 0.35;
+  const CRANE_BASE_INTO_BUILDING = 33;
+
+  const TRUCK_SPEED            = 61;
+  const TRUCK_COLLISION_RADIUS = 42;
+  const TRUCK_COLLISION_MIN    = 8;
+  const TRUCK_APPROACH_BUDGET  = 3 * BLOCK_SIZE;
+  const TRUCK_LOADING_TIME     = 1.0;
+  const TRUCK_SCAN_RADIUS      = 5 * BLOCK_SIZE;
+  const TRUCK_DEPART_SENTINEL  = 999999;
+  const FORKLIFT_SPEED         = 62;
+  const FORKLIFT_WORK_TIME     = 0.75;
+  const FORKLIFT_LENGTH        = 22;
+
   function getTopStorageSlotPosition(index) {
     return {
       x: TOP_STORAGE_X + STORAGE_CELL_MARGIN + (index % STORAGE_COLS) * STORAGE_CELL_STEP + STORAGE_CELL_HALF,
       y: TOP_STORAGE_Y + STORAGE_CELL_MARGIN + Math.floor(index / STORAGE_COLS) * STORAGE_CELL_STEP + STORAGE_CELL_HALF
     };
   }
- 
+
   function getBottomStorageSlotPosition(index) {
     return {
       x: BOTTOM_STORAGE_X + STORAGE_CELL_MARGIN + (index % STORAGE_COLS) * STORAGE_CELL_STEP + STORAGE_CELL_HALF,
       y: BOTTOM_STORAGE_Y + STORAGE_CELL_MARGIN + Math.floor(index / STORAGE_COLS) * STORAGE_CELL_STEP + STORAGE_CELL_HALF
     };
   }
- 
+
   function forkliftStopPos(targetX, targetY, approachAngle) {
     const cos = Math.cos(approachAngle);
     const sin = Math.sin(approachAngle);
@@ -227,7 +173,7 @@ function createSim() {
     const wy = FORKLIFT_CARRY_LOCAL_X * sin + FORKLIFT_CARRY_LOCAL_Y * cos;
     return { x: targetX - wx, y: targetY - wy };
   }
- 
+
   function getTruckBlockSlotPosition(truck) {
     const lx = -13.5, ly = 0.5;
     const cos = Math.cos(truck.angle);
@@ -237,16 +183,7 @@ function createSim() {
       y: truck.y + lx * sin + ly * cos
     };
   }
- 
-  // ---------------------------------------------------------------------------
-  // Road geometry helpers — parameterised, side-neutral
-  //
-  // All four original top/bottom pairs are replaced by single functions that
-  // accept a road coordinate set. Each quarry side builds its own `roadCoords`
-  // object from its geometry constants; the functions themselves are side-agnostic.
-  // This makes them trivially reusable when roles swap.
-  // ---------------------------------------------------------------------------
- 
+
   function closestPointOnSegment(px, py, ax, ay, bx, by) {
     const dx = bx - ax, dy = by - ay;
     const len2 = dx * dx + dy * dy;
@@ -255,8 +192,7 @@ function createSim() {
     t = Math.max(0, Math.min(1, t));
     return { x: ax + t * dx, y: ay + t * dy };
   }
- 
-  // isRoadBlock — was isTopRoadBlock / isBottomRoadBlock (bodies were identical)
+
   function isRoadBlock(row, col) {
     if (row === ROAD_ENTRY_ROW && col >= ROAD_LEFT_COL)                                    return true;
     if (row === ROAD_FAR_ROW   && col >= ROAD_LEFT_COL && col <= ROAD_RIGHT_COL)           return true;
@@ -265,17 +201,13 @@ function createSim() {
     if (col === ROAD_RIGHT_COL && row >= ROAD_ENTRY_ROW && row <= ROAD_FAR_ROW)            return true;
     return false;
   }
- 
-  // Road coordinate bundles — one per quarry side, passed into the shared helpers.
-  // Structure: { row4Y, midY, row14Y, leftColX, rightColX, segments }
-  // Built once here so callers never reconstruct them.
+
   const TOP_ROAD_COORDS = {
     row4Y:      topRow4Y,
     midY:       topMiddleRowY,
     row14Y:     topRow14Y,
     leftColX:   topCol3X,
     rightColX:  topCol13X,
-    // Segment list is derived from the five named coords above — no new literals.
     segments: [
       [topCol3X, topRow4Y,      topCol13X, topRow4Y],
       [topCol3X, topMiddleRowY, topCol13X, topMiddleRowY],
@@ -283,10 +215,9 @@ function createSim() {
       [topCol3X, topRow4Y,      topCol3X,  topRow14Y],
       [topCol13X,topRow4Y,      topCol13X, topRow14Y],
     ],
-    // Parking approach: extends rightColX toward station (leftward off-grid)
-    parkingBand:    [topCol13X, topRow4Y, STATION_X + STATION_WIDTH + 50, topRow4Y],
+    parkingBand: [topCol13X, topRow4Y, STATION_X + STATION_WIDTH + 50, topRow4Y],
   };
- 
+
   const BOT_ROAD_COORDS = {
     row4Y:      botRow4Y,
     midY:       botMiddleRowY,
@@ -300,11 +231,9 @@ function createSim() {
       [botCol3X, botRow4Y,      botCol3X,  botRow14Y],
       [botCol13X,botRow4Y,      botCol13X, botRow14Y],
     ],
-    // Parking approach: extends rightColX toward station (rightward off-grid)
-    parkingBand:    [botCol13X, botRow4Y, STATION_X - 50, botRow4Y],
+    parkingBand: [botCol13X, botRow4Y, STATION_X - 50, botRow4Y],
   };
- 
-  // closestRoadPoint — was closestRoadPointTop / closestRoadPointBottom
+
   function closestRoadPoint(px, py, rc) {
     let best = null, bestDist = Infinity;
     for (const s of rc.segments) {
@@ -314,8 +243,7 @@ function createSim() {
     }
     return best;
   }
- 
-  // buildRoadPath — was buildTopRoadPath / buildBottomRoadPath
+
   function buildRoadPath(sx, sy, ex, ey, rc) {
     const eps = 1.5;
     const onRow4   = y => Math.abs(y - rc.row4Y)    < eps;
@@ -337,8 +265,7 @@ function createSim() {
     if (endCol   !== null) return [{ x: endCol,   y: sy }, { x: ex, y: ey }];
     return [{ x: ex, y: ey }];
   }
- 
-  // pointOnSegments — shared utility for isOnRoad
+
   function pointOnSegments(px, py, segments, tol) {
     for (const s of segments) {
       const cp = closestPointOnSegment(px, py, s[0], s[1], s[2], s[3]);
@@ -346,21 +273,19 @@ function createSim() {
     }
     return false;
   }
- 
-  // isOnRoad — was isOnTopRoad / isOnBottomRoad
+
   function isOnRoad(px, py, rc) {
     return pointOnSegments(px, py, rc.segments,      14) ||
            pointOnSegments(px, py, [rc.parkingBand], 14);
   }
- 
-  // Back-compat aliases used by the harness exports (benchmark.js references these names)
+
   const isOnTopRoad    = (px, py) => isOnRoad(px, py, TOP_ROAD_COORDS);
   const isOnBottomRoad = (px, py) => isOnRoad(px, py, BOT_ROAD_COORDS);
   const closestRoadPointTop    = (px, py) => closestRoadPoint(px, py, TOP_ROAD_COORDS);
   const closestRoadPointBottom = (px, py) => closestRoadPoint(px, py, BOT_ROAD_COORDS);
   const buildTopRoadPath    = (sx, sy, ex, ey) => buildRoadPath(sx, sy, ex, ey, TOP_ROAD_COORDS);
   const buildBottomRoadPath = (sx, sy, ex, ey) => buildRoadPath(sx, sy, ex, ey, BOT_ROAD_COORDS);
- 
+
   function getPosition(dist) {
     let d = dist % TOTAL_TRACK_LENGTH;
     if (d < 0) d += TOTAL_TRACK_LENGTH;
@@ -380,26 +305,15 @@ function createSim() {
     const theta = Math.PI / 2 + (d / CURVE_RADIUS);
     return { x: LEFT_CX + CURVE_RADIUS * Math.cos(theta), y: CENTER_Y + CURVE_RADIUS * Math.sin(theta), angle: theta + Math.PI / 2 };
   }
- 
-  // ---------------------------------------------------------------------------
-  // Data arrays
-  // ---------------------------------------------------------------------------
+
   const topBlocks    = [];
   const bottomBlocks = [];
   const trucks       = [];
   let   forklifts    = [];
   let   cranes       = [];
- 
-  // ---------------------------------------------------------------------------
-  // Side config objects — passed to Truck/Forklift/Crane constructors.
-  // SIDE properties encode physical geometry (never changes).
-  // ROLE properties encode operational behaviour (flips on role-swap).
-  // Having both here, keyed by type string, means a role-swap is simply
-  // pointing each entity at the opposite config's role section.
-  // ---------------------------------------------------------------------------
+
   const SIDE_CONFIGS = {
     top: {
-      // --- SIDE: physical geometry ---
       parkingY:         topParkingY + PARKING_HEIGHT / 2,
       parkAngle:        -Math.PI / 2,
       roadCoords:       TOP_ROAD_COORDS,
@@ -411,40 +325,27 @@ function createSim() {
       forkliftHomeY:    TOP_FORKLIFT_HOME_Y,
       forkliftHomeAngle: Math.PI / 2,
       stationRefY:      TOP_Y,
-      stationYSign:     -1,           // -1 = station is above stationRefY
+      stationYSign:     -1,
       stationXEdge:     STATION_X,
-      stationXDir:      -1,           // -1 = "outside" is to the left
+      stationXDir:      -1,
       craneBaseX:       STATION_X + CRANE_BASE_INSET + CRANE_BASE_HALF_WIDTH,
       craneBaseY:       (TOP_Y - TOP_PLATFORM_HEIGHT) - 1,
-      // --- ROLE: operational behaviour (top = PRODUCER) ---
-      blocks:           null,         // set in initSim after arrays exist
-      // Block state transitions on truck loading:
-      //   blockOnPickup:  what happens to block when truck picks it up
-      //   blockOnDeposit: what happens to block when truck deposits it
-      // PRODUCER (top): pickup removes block (active→false), deposit unused
-      blockOnPickup:    b => { b.active = false; },   // truck carries block away
-      blockOnDeposit:   b => { b.active = true;  },   // unused for producer, symmetric placeholder
-      // Scan skip condition: block is NOT available to pick up
+      blocks:           null,
+      blockOnPickup:    b => { b.active = false; },
+      blockOnDeposit:   b => { b.active = true;  },
       blockScanReady:   b => !b.active || b.reserved,
-      // Truck work predicates
-      truckHasWork:     t => t.hasBlock,               // forklift unloads trucks that carry blocks
-      // Storage accessors
+      truckHasWork:     t => t.hasBlock,
       storageGetCount:  () => topStorageCount,
       storageIncrement: () => { topStorageCount = Math.min(STORAGE_CAPACITY, topStorageCount + 1); },
       storageDecrement: () => { topStorageCount--; },
       storageNotFull:   () => topStorageCount < STORAGE_CAPACITY,
       storageFull:      () => topStorageCount >= STORAGE_CAPACITY,
       storageEmpty:     () => topStorageCount <= 0,
-      // PARKED wait predicate: top truck waits if it already has a block OR storage is full
       parkShouldWait:   (t) => t.hasBlock || topStorageCount >= STORAGE_CAPACITY,
-      parkWaitTimer:    0.8,           // seconds to wait before retrying
-      // Scan/end-of-route: producer looks for a block to pick up (no block = wants to work)
+      parkWaitTimer:    0.8,
       truckWantsBlockOp: (t) => !t.hasBlock,
-      // Safety-net: target is a block to pick up, goes to pickupTarget
       safetyNetIsDeposit: false,
-      // Idle sentinel: stop top trucks when quarry is exhausted
       noMoreWork:       () => !topBlocks.some(b => b.active),
-      // Task names
       unloadTask:       'UNLOAD_TRUCK',
       dropTask:         'GO_TO_DROP_TOP',
       postDropTask:     'POST_DROP_TOP',
@@ -453,7 +354,6 @@ function createSim() {
       deliverTask:      null,
       goDropTask:       null,
       postDropOther:    null,
-      // Approach angles
       approachAngleToTruck:       -Math.PI / 2,
       approachAngleFromStorage:    Math.PI,
       storageDropAngleCenter:      Math.PI,
@@ -461,7 +361,6 @@ function createSim() {
       storageDropAngleDown:        Math.PI / 2,
     },
     bottom: {
-      // --- SIDE: physical geometry ---
       parkingY:         bottomParkingY + PARKING_HEIGHT / 2,
       parkAngle:         Math.PI / 2,
       roadCoords:       BOT_ROAD_COORDS,
@@ -473,38 +372,27 @@ function createSim() {
       forkliftHomeY:    BOTTOM_FORKLIFT_HOME_Y,
       forkliftHomeAngle: -Math.PI / 2,
       stationRefY:      BOTTOM_Y,
-      stationYSign:     +1,           // +1 = station is below stationRefY
+      stationYSign:     +1,
       stationXEdge:     STATION_X + STATION_WIDTH,
-      stationXDir:      +1,           // +1 = "outside" is to the right
+      stationXDir:      +1,
       craneBaseX:       STATION_X + STATION_WIDTH - CRANE_BASE_INSET - CRANE_BASE_HALF_WIDTH,
       craneBaseY:       BOTTOM_Y + BOTTOM_PLATFORM_OFFSET + BOTTOM_PLATFORM_HEIGHT + CRANE_BASE_INTO_BUILDING,
-      // --- ROLE: operational behaviour (bottom = CONSUMER) ---
-      blocks:           null,         // set in initSim
-      // Block state transitions on truck loading:
-      // CONSUMER (bottom): deposit fills slot (inactive→active), pickup unused
-      blockOnPickup:    b => { b.active = false; },   // unused for consumer, symmetric placeholder
-      blockOnDeposit:   b => { b.active = true;  },   // truck deposits block → fills slot
-      // Scan skip condition: slot is NOT available to deposit into
+      blocks:           null,
+      blockOnPickup:    b => { b.active = false; },
+      blockOnDeposit:   b => { b.active = true;  },
       blockScanReady:   b => b.active || b.reserved,
-      // Truck work predicates
-      truckHasWork:     t => !t.hasBlock,                   // forklift loads empty trucks
-      // Storage accessors
+      truckHasWork:     t => !t.hasBlock,
       storageGetCount:  () => bottomStorageCount,
       storageIncrement: () => { bottomStorageCount = Math.min(STORAGE_CAPACITY, bottomStorageCount + 1); },
       storageDecrement: () => { bottomStorageCount--; },
       storageNotFull:   () => bottomStorageCount < STORAGE_CAPACITY,
       storageFull:      () => bottomStorageCount >= STORAGE_CAPACITY,
       storageEmpty:     () => bottomStorageCount <= 0,
-      // PARKED wait predicate: bottom truck waits if it has no block (nothing to deposit yet)
       parkShouldWait:   (t) => !t.hasBlock,
       parkWaitTimer:    0.8,
-      // Scan/end-of-route: consumer looks for an empty slot to deposit into (has block = wants to work)
       truckWantsBlockOp: (t) => t.hasBlock,
-      // Safety-net: target is a slot to deposit into, goes to depositTarget
       safetyNetIsDeposit: true,
-      // Idle sentinel: bottom quarry never exhausted
       noMoreWork:       () => false,
-      // Task names
       unloadTask:       null,
       dropTask:         null,
       postDropTask:     null,
@@ -513,7 +401,6 @@ function createSim() {
       deliverTask:      'DELIVER_TRUCK',
       goDropTask:       'GO_TO_DROP_BOTTOM',
       postDropOther:    'POST_DROP_BOTTOM',
-      // Approach angles
       approachAngleToTruck:        Math.PI / 2,
       approachAngleFromStorage:    0,
       storageDropAngleCenter:      0,
@@ -521,10 +408,7 @@ function createSim() {
       storageDropAngleDown:        Math.PI / 2,
     },
   };
- 
-  // ---------------------------------------------------------------------------
-  // Truck class  (config-driven — no type branching inside update/moveToTarget)
-  // ---------------------------------------------------------------------------
+
   class Truck {
     constructor(type, index) {
       this.type  = type;
@@ -552,7 +436,7 @@ function createSim() {
       this.speed      = TRUCK_SPEED;
       this.parkedTime = 0;
     }
- 
+
     update(dt) {
       const cfg = this.cfg;
       const rc  = cfg.roadCoords;
@@ -561,13 +445,9 @@ function createSim() {
           this.parkedTime += dt;
           this.timer -= dt;
           if (this.timer <= 0) {
-            // cfg.parkShouldWait(truck) encodes the role-specific wait condition:
-            //   PRODUCER (top): wait if truck already has a block OR storage is full
-            //   CONSUMER (bottom): wait if truck has no block to deposit
             if (cfg.parkShouldWait(this)) { this.timer = cfg.parkWaitTimer; return; }
             this.state = 'DRIVING';
             this.parkedTime = 0;
-            // SIDE: route waypoints come from the road coords bundle
             const useShortcut = Math.random() < 0.5;
             this.route = useShortcut
               ? [ {x: rc.rightColX, y: rc.row4Y},
@@ -587,11 +467,9 @@ function createSim() {
             this.targetY = this.route[0].y;
           }
           break;
- 
+
         case 'DRIVING':
           if (this.moveToTarget(dt)) {
-            // Safety-net trigger: cfg.truckWantsBlockOp(truck) = true when truck
-            // has something useful to do at a block (pick up or deposit).
             if (cfg.truckWantsBlockOp(this) && this.safetyNetTarget &&
                 this.routeIndex === this.safetyNetTriggerIndex) {
               if (cfg.safetyNetIsDeposit) {
@@ -606,7 +484,6 @@ function createSim() {
               break;
             }
             this.routeIndex++;
-            // End-of-route block search: truck looks for block/slot to work with
             if (cfg.truckWantsBlockOp(this) && this.routeIndex === this.route.length - 1) {
               let nearest = null, nearestDist = Infinity;
               for (const b of cfg.blocks) {
@@ -642,7 +519,6 @@ function createSim() {
               this.state = 'PARKED';
               this.timer = Math.random() * 3.1 + 1.6;
               this.parkedTime = 0;
-              // PRODUCER role: park indefinitely when quarry is exhausted
               if (!this.hasBlock && cfg.noMoreWork()) {
                 this.timer = TRUCK_DEPART_SENTINEL;
               }
@@ -651,7 +527,6 @@ function createSim() {
               this.targetY = this.route[this.routeIndex].y;
             }
           }
-          // Proximity scan while driving
           if (cfg.truckWantsBlockOp(this) && this.routeIndex < this.route.length - 1) {
             const candidates = [];
             for (const b of cfg.blocks) {
@@ -672,7 +547,7 @@ function createSim() {
             }
           }
           break;
- 
+
         case 'APPROACHING':
           {
             const prevX = this.x, prevY = this.y;
@@ -685,7 +560,7 @@ function createSim() {
             }
           }
           break;
- 
+
         case 'LOADING':
           this.timer -= dt;
           if (this.timer <= 0) {
@@ -697,16 +572,21 @@ function createSim() {
             }
             if (this.pickupTarget) {
               cfg.blockOnPickup(this.pickupTarget);
-              this.pickupTarget.reserved = false;
-              this.pickupTarget = null;
-              this.hasBlock = true;
+              this.pickupTarget.reserved = false; this.pickupTarget = null; this.hasBlock = true;
+            }
+            // Clear any stale safety-net claim — the slot it pointed at stays reserved=true
+            // if it was never deposited into, permanently locking it out of future scans.
+            if (this.safetyNetTarget) {
+              this.safetyNetTarget.reserved = false;
+              this.safetyNetTarget = null;
+              this.safetyNetTriggerIndex = -1;
             }
             this.state = 'DRIVING';
           }
           break;
       }
     }
- 
+
     moveToTarget(dt) {
       let blocked = false;
       for (const ot of trucks) {
@@ -735,9 +615,7 @@ function createSim() {
       return false;
     }
   }
-  // ---------------------------------------------------------------------------
-  // Forklift class  (config-driven)
-  // ---------------------------------------------------------------------------
+
   class Forklift {
     constructor(type) {
       this.type      = type;
@@ -758,26 +636,24 @@ function createSim() {
       this.pathIndex = 0;
       this.departureAngle = 0;
     }
- 
+
     buildPathTo(destX, destY, destAngle) {
       this.path = [{ x: destX, y: destY }];
       this.pathIndex = 0;
       this.departureAngle = destAngle;
     }
- 
+
     stationWaypoints() {
       const cfg    = this.cfg;
       const entryY = cfg.storageY + cfg.storageEntryYOff;
       const cx     = STATION_X + STATION_WIDTH / 2;
       const ySign  = cfg.stationYSign;
-      // parkingSide: centre of station, positioned inside the parking bay clearance
-      // storageSide: storage-facing edge of station, on the entry Y centreline
       return {
         parkingSide: { x: cx, y: cfg.stationRefY + ySign * (STATION_TOTAL_HEIGHT - FORKLIFT_LENGTH) },
         storageSide: { x: cfg.stationXEdge + ySign * (-cfg.stationXDir) * FORKLIFT_LENGTH, y: entryY },
       };
     }
- 
+
     update(dt) {
       if (this.state === 'HOME' || this.state === 'IDLE') {
         if (this.state === 'IDLE' && this.idleTimer > 0) { this.idleTimer -= dt; return; }
@@ -796,11 +672,10 @@ function createSim() {
         }
       }
     }
- 
+
     findNextTask() {
       const cfg = this.cfg;
       if (cfg.unloadTask) {
-        // PRODUCER role: unload trucks with blocks → fill storage
         if (cfg.storageFull()) { this.goHomeIfNotThere(); return; }
         let bestTruck = null, maxWait = -1;
         for (const t of trucks) {
@@ -821,7 +696,6 @@ function createSim() {
         }
         this.goHomeIfNotThere();
       } else {
-        // CONSUMER role: empty storage → load trucks
         if (cfg.storageEmpty()) { this.goHomeIfNotThere(); return; }
         const hasReadyTruck = trucks.some(t => t.type === this.type && t.state === 'PARKED' && cfg.truckHasWork(t));
         if (!hasReadyTruck) { this.goHomeIfNotThere(); return; }
@@ -845,14 +719,14 @@ function createSim() {
         this.state = 'MOVING';
       }
     }
- 
+
     goHomeIfNotThere() {
       const atHome = Math.abs(this.x - this.homeX) < 3 && Math.abs(this.y - this.homeY) < 3;
       if (atHome) { this.state = 'HOME'; this.angle = this.homeAngle; return; }
       this.buildPathTo(this.homeX, this.homeY, this.homeAngle);
       this.state = 'GOING_HOME';
     }
- 
+
     followPath(dt) {
       if (this.pathIndex >= this.path.length) return true;
       const wp   = this.path[this.pathIndex];
@@ -871,13 +745,12 @@ function createSim() {
       this.y += Math.sin(this.angle) * move;
       return false;
     }
- 
+
     arriveAtTarget() { this.state = 'WORKING'; this.timer = FORKLIFT_WORK_TIME; }
- 
+
     arriveAtCenter() {
       const cfg = this.cfg;
       if (this.nextTask === cfg.dropTask) {
-        // PRODUCER: carry block to storage
         this.nextTask = cfg.dropStorageTask;
         const slotIdx = Math.min(cfg.storageGetCount(), STORAGE_CAPACITY - 1);
         const slot    = cfg.storageSlotFn(slotIdx);
@@ -899,7 +772,6 @@ function createSim() {
       } else if (this.nextTask === cfg.postDropTask) {
         this.nextTask = null; this.findNextTask();
       } else if (this.nextTask === cfg.goDropTask) {
-        // CONSUMER: deliver block to a waiting truck
         if (this.targetTruck && this.targetTruck.state === 'PARKED' && cfg.truckHasWork(this.targetTruck)) {
           this.nextTask = cfg.deliverTask;
           const slot = getTruckBlockSlotPosition(this.targetTruck);
@@ -916,7 +788,7 @@ function createSim() {
         this.nextTask = null; this.findNextTask();
       }
     }
- 
+
     goToCenter(nextTaskAfter) {
       const cfg  = this.cfg;
       this.nextTask = nextTaskAfter;
@@ -940,11 +812,10 @@ function createSim() {
       this.departureAngle = this.homeAngle;
       this.state = 'TRANSIT_TO_CENTER';
     }
- 
+
     completeWork() {
       const cfg = this.cfg;
       if (this.nextTask === cfg.unloadTask) {
-        // PRODUCER: take block from truck, carry to storage
         if (this.targetTruck && this.targetTruck.hasBlock) {
           this.targetTruck.hasBlock = false;
           this.carrying = true;
@@ -953,12 +824,10 @@ function createSim() {
         this.targetTruck = null;
         this.goToCenter(cfg.dropTask);
       } else if (this.nextTask === cfg.dropStorageTask) {
-        // PRODUCER: place block in storage
         if (this.carrying) cfg.storageIncrement();
         this.carrying = false;
         this.goToCenter(cfg.postDropTask);
       } else if (this.nextTask === cfg.pickStorageTask) {
-        // CONSUMER: take block from storage, find a truck to deliver to
         if (!cfg.storageEmpty()) { cfg.storageDecrement(); this.carrying = true; }
         let truck = null, maxWait = -1;
         for (const t of trucks) {
@@ -974,7 +843,6 @@ function createSim() {
           this.goToCenter(cfg.postDropOther);
         }
       } else if (this.nextTask === cfg.deliverTask) {
-        // CONSUMER: place block on truck
         if (this.targetTruck && this.targetTruck.state === 'PARKED' && cfg.truckHasWork(this.targetTruck) && this.carrying) {
           this.targetTruck.hasBlock = true;
           this.targetTruck.timer = 0.2;
@@ -987,10 +855,7 @@ function createSim() {
       }
     }
   }
- 
-  // ---------------------------------------------------------------------------
-  // Crane class  (config-driven)
-  // ---------------------------------------------------------------------------
+
   class Crane {
     constructor(type) {
       this.type    = type;
@@ -1017,13 +882,13 @@ function createSim() {
       this.pickTarget = { x: 0, y: 0 };
       this.dropTarget = { x: 0, y: 0 };
     }
- 
+
     normalizeAngle(a) {
       let n = a % (2 * Math.PI);
       if (n < 0) n += 2 * Math.PI;
       return n;
     }
- 
+
     aimAt(wx, wy) {
       const dx = wx - this.pivotX, dy = wy - this.pivotY;
       let ang = Math.atan2(dy, dx);
@@ -1031,20 +896,20 @@ function createSim() {
       const len = Math.min(this.maxLength, Math.max(this.minLength, Math.hypot(dx, dy)));
       return { angle: ang, length: len };
     }
- 
+
     shortestAngleDelta() {
       let d = this.targetAngle - this.currentAngle;
       d = ((d % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
       if (d > Math.PI) d -= 2 * Math.PI;
       return d;
     }
- 
+
     angleSettled()  { return Math.abs(this.shortestAngleDelta()) < 0.055; }
     armSettled()    {
       return Math.abs(this.shortestAngleDelta()) < 0.08 &&
              Math.abs(this.targetLength - this.currentLength) < 3.5;
     }
- 
+
     updateArm(dt) {
       const angleDelta   = this.shortestAngleDelta();
       const rotationStep = Math.max(-this.rotateSpeed * dt, Math.min(this.rotateSpeed * dt, angleDelta));
@@ -1057,27 +922,25 @@ function createSim() {
       this.hookX = this.pivotX + Math.cos(this.currentAngle) * this.currentLength;
       this.hookY = this.pivotY + Math.sin(this.currentAngle) * this.currentLength;
     }
- 
+
     isReady() {
       return this.state === 'IDLE' && !this.isCarrying && Math.abs(this.currentLength - this.minLength) < 4;
     }
- 
+
     canStartNewTask() {
       const cfg = this.cfg;
       return cfg.unloadTask
-        ? cfg.storageGetCount() > 0 && !trainBlocks.every(b => b)  // PRODUCER: storage→train
-        : trainBlocks.some(b => b) && cfg.storageNotFull();         // CONSUMER: train→storage
+        ? cfg.storageGetCount() > 0 && !trainBlocks.every(b => b)
+        : trainBlocks.some(b => b) && cfg.storageNotFull();
     }
- 
+
     preparePick() {
       const cfg = this.cfg;
       if (cfg.unloadTask) {
-        // PRODUCER: pick from storage
         if (cfg.storageGetCount() <= 0) return false;
         const pos = cfg.storageSlotFn(cfg.storageGetCount() - 1);
         this.pickTarget = { x: pos.x, y: pos.y };
       } else {
-        // CONSUMER: pick from train carriage
         const loadedIdx = trainBlocks.findIndex(b => b);
         if (loadedIdx === -1) return false;
         this.currentCarriage = loadedIdx;
@@ -1089,7 +952,7 @@ function createSim() {
       this.targetLength = this.minLength;
       return true;
     }
- 
+
     performPick() {
       const cfg = this.cfg;
       if (cfg.unloadTask) {
@@ -1101,11 +964,10 @@ function createSim() {
         }
       }
     }
- 
+
     prepareDrop() {
       const cfg = this.cfg;
       if (cfg.unloadTask) {
-        // PRODUCER: drop to train
         const emptyIdx = trainBlocks.findIndex(b => !b);
         if (emptyIdx >= 0) {
           this.currentCarriage = emptyIdx;
@@ -1113,7 +975,6 @@ function createSim() {
           this.dropTarget = { x: pos.x, y: pos.y };
         }
       } else {
-        // CONSUMER: drop to storage
         const pos = cfg.storageSlotFn(cfg.storageGetCount());
         this.dropTarget = { x: pos.x, y: pos.y };
       }
@@ -1121,7 +982,7 @@ function createSim() {
       this.targetAngle  = aim.angle;
       this.targetLength = this.minLength;
     }
- 
+
     performDrop() {
       const cfg = this.cfg;
       if (cfg.unloadTask) {
@@ -1131,7 +992,7 @@ function createSim() {
       }
       this.isCarrying = false;
     }
- 
+
     update(dt) {
       this.updateArm(dt);
       if (trainAtStation !== this.type || trainState !== 'STOPPED') {
@@ -1197,13 +1058,8 @@ function createSim() {
       }
     }
   }
- 
-  // ---------------------------------------------------------------------------
-  // Init
-  // ---------------------------------------------------------------------------
+
   function initSim() {
-    // Wire live block arrays into side configs (can't be done at definition time
-    // because the arrays are declared after SIDE_CONFIGS).
     SIDE_CONFIGS.top.blocks    = topBlocks;
     SIDE_CONFIGS.bottom.blocks = bottomBlocks;
     topBlocks.length    = 0;
@@ -1240,16 +1096,13 @@ function createSim() {
     forklifts = [new Forklift('top'), new Forklift('bottom')];
     cranes    = [new Crane('top'),    new Crane('bottom')];
   }
- 
-  // ---------------------------------------------------------------------------
-  // Train update (mirrors animate() loop from original)
-  // ---------------------------------------------------------------------------
+
   function updateTrain(dt) {
     let d      = distance % TOTAL_TRACK_LENGTH;
     let dist1  = (STOP_DIST_1 - d + TOTAL_TRACK_LENGTH) % TOTAL_TRACK_LENGTH;
     let dist2  = (STOP_DIST_2 - d + TOTAL_TRACK_LENGTH) % TOTAL_TRACK_LENGTH;
     let closestDist = Math.min(dist1, dist2);
- 
+
     if (closestDist < BRAKE_DISTANCE && trainState !== 'STOPPED' && trainState !== 'ACCELERATING') {
       trainState   = 'DECELERATING';
       currentSpeed = Math.max(TRAIN_MIN_SPEED, baseSpeed * Math.pow(closestDist / BRAKE_DISTANCE, 0.78));
@@ -1262,14 +1115,11 @@ function createSim() {
     } else if (trainState === 'STOPPED') {
       let readyToDepart = false;
       if (trainAtStation) {
-        // Find the crane assigned to this station and ask if it's finished
         const stationCrane = cranes.find(c => c.type === trainAtStation);
         const cfg = SIDE_CONFIGS[trainAtStation];
-        // PRODUCER station (top): train is ready when fully loaded
-        // CONSUMER station (bottom): train is ready when fully emptied
         const trainReady = cfg.unloadTask
-          ? trainBlocks.every(b => b)    // producer loaded all carriages
-          : !trainBlocks.some(b => b);   // consumer emptied all carriages
+          ? trainBlocks.every(b => b)
+          : !trainBlocks.some(b => b);
         readyToDepart = trainReady && stationCrane && stationCrane.isReady();
       }
       if (readyToDepart) {
@@ -1286,24 +1136,17 @@ function createSim() {
     }
     distance += currentSpeed * dt;
   }
- 
-  // ---------------------------------------------------------------------------
-  // Public step function
-  // ---------------------------------------------------------------------------
+
   function step(dt) {
     updateTrain(dt);
     for (const t of trucks)    t.update(dt);
     for (const f of forklifts) f.update(dt);
     for (const c of cranes)    c.update(dt);
   }
- 
-  // ---------------------------------------------------------------------------
-  // Expose internal state for the harness
-  // ---------------------------------------------------------------------------
+
   return {
     step,
     initSim,
-    // State accessors
     get distance()          { return distance; },
     get trainState()        { return trainState; },
     get trainAtStation()    { return trainAtStation; },
@@ -1316,7 +1159,6 @@ function createSim() {
     get cranes()            { return cranes; },
     get topBlocks()         { return topBlocks; },
     get bottomBlocks()      { return bottomBlocks; },
-    // Geometry exports for harness validators
     geometry: {
       TOTAL_TRACK_LENGTH, BLOCK_SIZE, STORAGE_CAPACITY,
       STORAGE_COLS, STORAGE_CELL_STEP, STORAGE_CELL_MARGIN, STORAGE_CELL_SIZE, STORAGE_CELL_HALF,
@@ -1337,13 +1179,12 @@ function createSim() {
       closestRoadPointTop, closestRoadPointBottom,
       buildTopRoadPath, buildBottomRoadPath,
       getTopStorageSlotPosition, getBottomStorageSlotPosition,
-      // New unified helpers (for future use)
       isOnRoad, closestRoadPoint, buildRoadPath,
       TOP_ROAD_COORDS, BOT_ROAD_COORDS
     }
   };
 }
- 
+
         // ─────────────────────────────────────────────────────────────────────
         // RENDERING — COLOURS & CONSTANTS
         // ─────────────────────────────────────────────────────────────────────
@@ -1357,12 +1198,11 @@ function createSim() {
             truckCab: '#e69900', truckTrailer: '#cc5500', truckWindow: '#add8e6',
             forkliftBody: '#ffcc00', forkliftForks: '#bbbbbb',
         };
- 
+
         // ─────────────────────────────────────────────────────────────────────
         // DRAW HELPERS
         // ─────────────────────────────────────────────────────────────────────
- 
-        // drawStorage — was two inline blocks in drawStorages()
+
         function drawStorage(sx, sy, count) {
             ctx.strokeStyle = '#ffffff';
             ctx.lineWidth = 4;
@@ -1377,14 +1217,10 @@ function createSim() {
                 ctx.fillStyle = COLORS.quarryDeep; ctx.fillRect(cx + 5, cy + 5, STORAGE_CELL_SIZE - 10, STORAGE_CELL_SIZE - 10);
             }
         }
- 
-        // drawRoadLoop — was two near-identical path sequences in drawRoads()
-        // rc = road coord bundle { row4Y, midY, row14Y, leftColX, rightColX }
-        // parkingConnectorX = where the connector meets the parking lot edge
+
         function drawRoadLoop(rc, parkingConnectorX) {
             ctx.strokeStyle = COLORS.parkingAsphalt;
             ctx.lineWidth = 20;
-            // Main loop
             ctx.beginPath();
             ctx.moveTo(parkingConnectorX, rc.row4Y);
             ctx.lineTo(rc.leftColX, rc.row4Y);
@@ -1392,12 +1228,10 @@ function createSim() {
             ctx.lineTo(rc.rightColX, rc.row14Y);
             ctx.lineTo(rc.rightColX, rc.row4Y);
             ctx.stroke();
-            // Mid cross-road
             ctx.beginPath();
             ctx.moveTo(rc.leftColX, rc.midY);
             ctx.lineTo(rc.rightColX, rc.midY);
             ctx.stroke();
-            // Dashed centre lines
             ctx.strokeStyle = COLORS.parkingLine;
             ctx.lineWidth = 2;
             ctx.setLineDash([8, 8]);
@@ -1414,9 +1248,7 @@ function createSim() {
             ctx.stroke();
             ctx.setLineDash([]);
         }
- 
-        // drawStationHalf — was two near-identical blocks in drawStations()
-        // ySign = -1 for top (station above rail), +1 for bottom (station below rail)
+
         function drawStationHalf(railY, ySign, pkgY, forkliftHomeX, forkliftHomeY) {
             const platformH  = ySign < 0 ? TOP_PLATFORM_HEIGHT : BOTTOM_PLATFORM_HEIGHT;
             const platformY  = ySign < 0 ? railY - TOP_PLATFORM_HEIGHT : railY + BOTTOM_PLATFORM_OFFSET;
@@ -1424,16 +1256,12 @@ function createSim() {
             const parkingX   = STATION_X + (STATION_WIDTH - PARKING_WIDTH) / 2;
             const spotSpacing = PARKING_WIDTH / 5;
             const lineHeight  = 21;
-            // Platform strip
             ctx.fillStyle = COLORS.stationPlatform;
             ctx.fillRect(STATION_X, platformY, STATION_WIDTH, platformH);
-            // Building block
             ctx.fillStyle = COLORS.stationBuilding;
             ctx.fillRect(STATION_X, buildingY, STATION_WIDTH, BUILDING_HEIGHT);
-            // Parking lot
             ctx.fillStyle = COLORS.parkingAsphalt;
             ctx.fillRect(parkingX, pkgY, PARKING_WIDTH, PARKING_HEIGHT);
-            // Parking divider lines
             ctx.strokeStyle = COLORS.parkingLine;
             ctx.lineWidth = 3;
             const lineTopY = ySign < 0
@@ -1448,10 +1276,6 @@ function createSim() {
                 ctx.lineTo(parkingX + i * spotSpacing, lineBotY);
                 ctx.stroke();
             }
-            // Forklift home bay dashes.
-            // Offsets differ per side because the forklift body is asymmetric and its
-            // home angle is mirrored: top faces down (+π/2), bottom faces up (-π/2).
-            // Original values: top (-10, -18), bottom (-14, -20).
             const boxOffX = ySign < 0 ? -10 : -14;
             const boxOffY = ySign < 0 ? -18 : -20;
             ctx.setLineDash([5, 5]);
@@ -1460,13 +1284,11 @@ function createSim() {
             ctx.strokeRect(forkliftHomeX + boxOffX, forkliftHomeY + boxOffY, 24, 38);
             ctx.setLineDash([]);
         }
- 
- 
- 
+
         // ─────────────────────────────────────────────────────────────────────
         // SCENE DRAW FUNCTIONS
         // ─────────────────────────────────────────────────────────────────────
- 
+
         function drawRoads() {
             ctx.lineJoin = 'round';
             ctx.lineCap  = 'square';
@@ -1476,19 +1298,17 @@ function createSim() {
             ctx.lineJoin = 'miter';
             ctx.lineCap  = 'butt';
         }
- 
+
         function drawStorages() {
             drawStorage(TOP_STORAGE_X,    TOP_STORAGE_Y,    sim.topStorageCount);
             drawStorage(BOTTOM_STORAGE_X, BOTTOM_STORAGE_Y, sim.bottomStorageCount);
         }
- 
+
         function drawStations() {
             drawStationHalf(TOP_Y,    -1, topParkingY,    TOP_FORKLIFT_HOME_X,    TOP_FORKLIFT_HOME_Y);
             drawStationHalf(BOTTOM_Y, +1, bottomParkingY, BOTTOM_FORKLIFT_HOME_X, BOTTOM_FORKLIFT_HOME_Y);
         }
- 
- 
- 
+
         function drawQuarryBlocks() {
             function drawBlocks(blocks) {
                 for (const b of blocks) {
@@ -1507,7 +1327,7 @@ function createSim() {
             drawBlocks(sim.topBlocks);
             drawBlocks(sim.bottomBlocks);
         }
- 
+
         function drawRails() {
             ctx.lineWidth = 26;
             ctx.strokeStyle = COLORS.trackBed;
@@ -1517,7 +1337,7 @@ function createSim() {
             ctx.lineTo(LEFT_CX, BOTTOM_Y);
             ctx.arc(LEFT_CX, CENTER_Y, CURVE_RADIUS, Math.PI/2, 3*Math.PI/2);
             ctx.stroke();
- 
+
             ctx.lineWidth = 4;
             ctx.strokeStyle = COLORS.rail;
             [[-8],[8]].forEach(([off]) => {
@@ -1536,18 +1356,18 @@ function createSim() {
                 });
             });
         }
- 
+
         // ─────────────────────────────────────────────────────────────────────
         // ENTITY DRAW FUNCTIONS
         // ─────────────────────────────────────────────────────────────────────
- 
+
         function drawBlock(cx, cy) {
-            const s = BLOCK_SIZE - 5; // ~13px
+            const s = BLOCK_SIZE - 5;
             ctx.fillStyle = COLORS.quarryMain; ctx.fillRect(cx - s/2, cy - s/2, s, s);
             ctx.fillStyle = COLORS.quarryMid;  ctx.fillRect(cx - s/2+2, cy - s/2+2, s-4, s-4);
             ctx.fillStyle = COLORS.quarryDeep; ctx.fillRect(cx - 1.5, cy - 1.5, 3, 3);
         }
- 
+
         function drawTruck(truck) {
             ctx.save();
             ctx.translate(truck.x, truck.y);
@@ -1566,7 +1386,7 @@ function createSim() {
             }
             ctx.restore();
         }
- 
+
         function drawForklift(fl) {
             ctx.save();
             ctx.translate(fl.x, fl.y);
@@ -1585,7 +1405,7 @@ function createSim() {
             }
             ctx.restore();
         }
- 
+
         function drawEngine(x, y, angle) {
             ctx.save();
             ctx.translate(x, y); ctx.rotate(angle);
@@ -1598,7 +1418,7 @@ function createSim() {
             ctx.fillRect(TRAIN_LENGTH/2-11, -TRAIN_WIDTH/2+2, 11, TRAIN_WIDTH-4);
             ctx.restore();
         }
- 
+
         function drawCarriage(x, y, angle, hasBlock) {
             ctx.save();
             ctx.translate(x, y); ctx.rotate(angle);
@@ -1616,14 +1436,13 @@ function createSim() {
             }
             ctx.restore();
         }
- 
+
         function drawCrane(crane) {
             const staticArmLen = 17, baseH = 9, rotatingLen = 22;
             const armW = 7, extW = 5.5, crossScale = 0.36;
             const extension = Math.max(0, crane.currentLength - rotatingLen);
             const baseLeft  = crane.baseX - 13;
             const baseTop   = crane.baseY - baseH;
-            // Base (striped)
             ctx.fillStyle = '#facc15';
             ctx.fillRect(baseLeft, baseTop, 26, baseH);
             ctx.save();
@@ -1640,11 +1459,9 @@ function createSim() {
             ctx.restore();
             ctx.strokeStyle = '#222'; ctx.lineWidth = 1;
             ctx.strokeRect(baseLeft, baseTop, 26, baseH);
-            // Mast
             ctx.fillStyle = '#f1c40f'; ctx.fillRect(crane.baseX-4, crane.baseY-baseH-staticArmLen, 8, staticArmLen);
             ctx.strokeStyle = '#555555'; ctx.lineWidth = 1.2;
             ctx.strokeRect(crane.baseX-4, crane.baseY-baseH-staticArmLen, 8, staticArmLen);
-            // Rotating arm
             ctx.save();
             ctx.translate(crane.pivotX, crane.pivotY); ctx.rotate(crane.currentAngle);
             ctx.fillStyle = '#7f8c8d'; ctx.fillRect(0, -armW/2, rotatingLen, armW);
@@ -1655,10 +1472,8 @@ function createSim() {
                 ctx.strokeRect(rotatingLen, -extW/2, extension, extW);
             }
             ctx.restore();
-            // Pivot ball
             ctx.fillStyle = '#555555';
             ctx.beginPath(); ctx.arc(crane.pivotX, crane.pivotY, 6, 0, Math.PI*2); ctx.fill();
-            // Carrying block
             if (crane.isCarrying) {
                 const bSize = 13;
                 ctx.fillStyle = COLORS.quarryMain; ctx.fillRect(crane.hookX-bSize/2, crane.hookY-bSize/2, bSize, bSize);
@@ -1667,7 +1482,7 @@ function createSim() {
             }
             drawCraneCross(crane.hookX, crane.hookY, crossScale);
         }
- 
+
         function drawCraneCross(hx, hy, scale) {
             ctx.save();
             ctx.translate(hx, hy); ctx.rotate(Math.PI/4); ctx.scale(scale, scale);
@@ -1676,22 +1491,18 @@ function createSim() {
             ctx.strokeStyle = '#000000'; ctx.lineWidth = 1.5;
             ctx.strokeRect(-20,-3,40,6); ctx.strokeRect(-3,-20,6,40);
             ctx.fillStyle = '#000000';
-            // Arrowheads drawn individually below
-            // Arrowheads
             ctx.beginPath(); ctx.moveTo(-20,-3); ctx.lineTo(-26,0); ctx.lineTo(-20,3); ctx.closePath(); ctx.fill();
             ctx.beginPath(); ctx.moveTo( 20,-3); ctx.lineTo( 26,0); ctx.lineTo( 20,3); ctx.closePath(); ctx.fill();
             ctx.beginPath(); ctx.moveTo(-3,-20); ctx.lineTo(0,-26); ctx.lineTo(3,-20); ctx.closePath(); ctx.fill();
             ctx.beginPath(); ctx.moveTo(-3, 20); ctx.lineTo(0, 26); ctx.lineTo(3, 20); ctx.closePath(); ctx.fill();
             ctx.restore();
         }
- 
+
         // ─────────────────────────────────────────────────────────────────────
         // MAIN LOOP
         // ─────────────────────────────────────────────────────────────────────
         const sim = createSim();
- 
-        // Re-expose geometry constants from sim for draw functions
-        // (sim-core exposes them via sim.geometry)
+
         const {
             WIDTH, HEIGHT, CENTER_X, CENTER_Y,
             TOP_Y, BOTTOM_Y, LEFT_CX, RIGHT_CX, CURVE_RADIUS, STRAIGHT_LENGTH,
@@ -1705,8 +1516,7 @@ function createSim() {
             BOTTOM_FORKLIFT_HOME_X, BOTTOM_FORKLIFT_HOME_Y,
             STOP_DIST_1, STOP_DIST_2, BRAKE_DISTANCE,
         } = sim.geometry;
- 
-        // Station & train geometry (matches sim-core constants exactly)
+
         const TOP_PLATFORM_HEIGHT    = 30;
         const BOTTOM_PLATFORM_HEIGHT = 26;
         const BOTTOM_PLATFORM_OFFSET = 4;
@@ -1718,50 +1528,44 @@ function createSim() {
         const CARRIAGE_LENGTH        = 26;
         const CARRIAGE_WIDTH         = 20;
         const CARRIAGE_SEPARATION    = 36;
- 
+
         let lastTime = 0;
         function animate(timestamp) {
             if (!lastTime) lastTime = timestamp;
             let dt = Math.min((timestamp - lastTime) / 1000, 0.1);
             lastTime = timestamp;
- 
+
             sim.step(dt);
- 
+
             ctx.clearRect(0, 0, WIDTH, HEIGHT);
             ctx.fillStyle = COLORS.grass;
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
- 
-            // Draw order: stations/parking asphalt first so storage blocks render on top
+
             drawRoads();
             drawQuarryBlocks();
-            drawStations();    // parking asphalt drawn before storage boxes
-            drawStorages();    // storage box + content blocks drawn over asphalt
-            // (forklift paths removed — no longer displayed)
- 
-            // Parked empty trucks drawn first (underneath active trucks)
+            drawStations();
+            drawStorages();
+
             for (const t of sim.trucks) { if (t.state === 'PARKED' && !t.hasBlock) drawTruck(t); }
-            // Active / loaded trucks drawn on top
             for (const t of sim.trucks) { if (t.state !== 'PARKED' || t.hasBlock)  drawTruck(t); }
- 
+
             for (const f of sim.forklifts) drawForklift(f);
- 
+
             drawRails();
- 
-            // Carriages drawn back-to-front (5→1), then engine
+
             const enginePos = sim.helpers.getPosition(sim.distance);
             for (let i = 4; i >= 0; i--) {
                 const p = sim.helpers.getPosition(sim.distance - CARRIAGE_SEPARATION * (i + 1));
                 drawCarriage(p.x, p.y, p.angle, sim.trainBlocks[i]);
             }
             drawEngine(enginePos.x, enginePos.y, enginePos.angle);
- 
-            // Cranes: draw all bodies first, then all crosses on top (matches original two-pass)
+
             for (const c of sim.cranes) drawCrane(c);
             for (const c of sim.cranes) drawCraneCross(c.hookX, c.hookY, 0.36);
- 
+
             requestAnimationFrame(animate);
         }
- 
+
         sim.initSim();
         requestAnimationFrame(animate);
     </script>
