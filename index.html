@@ -1200,6 +1200,130 @@ function createSim() {
         };
 
         // ─────────────────────────────────────────────────────────────────────
+        // FARM PATCH (NEW FEATURE)
+        // ─────────────────────────────────────────────────────────────────────
+        const FARM_SOIL_COLS = 8;
+        const FARM_SOIL_ROWS = 10;
+        const FARM_BLOCK_SIZE = 18;
+        const FARM_GRASS_BORDER = 18; // 1 block border of grass
+        const FARM_FENCE_THICK = 5;
+        const FARM_WOOD_COLOR = '#8B5A2B';      // warm wood brown
+        const FARM_POST_COLOR = '#5C4033';      // darker posts
+        const FARM_SOIL_MAIN = '#5C4033';       // darker natural soil
+        const FARM_SOIL_SPECKLE = '#3D2B1F';    // darker speckles for rough look
+        const FARM_SOIL_EDGE = '#7B5E3F';       // subtle edge variation
+
+        // Position: exactly 18px from right edge of canvas (1200), top-right, building right + down
+        const FARM_RIGHT_MARGIN = 18;
+        const FARM_SOIL_X = 1200 - FARM_RIGHT_MARGIN - FARM_GRASS_BORDER - (FARM_SOIL_COLS * FARM_BLOCK_SIZE);
+        const FARM_SOIL_Y = 7 * 18; // exactly 126px from top
+
+        const FARM_OUTER_X = FARM_SOIL_X - FARM_GRASS_BORDER;
+        const FARM_OUTER_Y = FARM_SOIL_Y - FARM_GRASS_BORDER;
+        const FARM_OUTER_W = FARM_SOIL_COLS * FARM_BLOCK_SIZE + 2 * FARM_GRASS_BORDER;
+        const FARM_OUTER_H = FARM_SOIL_ROWS * FARM_BLOCK_SIZE + 2 * FARM_GRASS_BORDER;
+
+        function drawFarmPatch() {
+            const fx = FARM_OUTER_X;
+            const fy = FARM_OUTER_Y;
+            const fw = FARM_OUTER_W;
+            const fh = FARM_OUTER_H;
+
+            // === Full perimeter light dirt/sandy track made of textured blocks ===
+            // 18px wide track with 3px grass gap to soil blocks (non-visibly separated look)
+            const TRACK_BLOCK_SIZE = 18;
+            const grassGap = 0; // gap removed as requested - track now touches soil directly
+
+            // Light sandy/gravel track colors — tuned for top-down farm pixel art (Stardew-style warm tan)
+            const TRACK_MAIN = '#C9A87A';        // warm sandy tan (classic farm path base)
+            const TRACK_SPECKLE_DARK = '#8B7355'; // warmer gravel brown
+            const TRACK_SPECKLE_LIGHT = '#D8C8A0'; // soft sandy highlight
+
+            // Helper to draw one track block with gravelly texture (no hard separation)
+            function drawTrackBlock(x, y) {
+                // Base sandy color
+                ctx.fillStyle = TRACK_MAIN;
+                ctx.fillRect(x, y, TRACK_BLOCK_SIZE, TRACK_BLOCK_SIZE);
+
+                // Gravel/sand speckles (darker + lighter dots for textured appearance)
+                ctx.fillStyle = TRACK_SPECKLE_DARK;
+                ctx.fillRect(x + 3, y + 5, 2, 2);
+                ctx.fillRect(x + 10, y + 9, 2, 2);
+                ctx.fillRect(x + 5, y + 13, 2, 2);
+                ctx.fillRect(x + 14, y + 4, 2, 2);
+                ctx.fillRect(x + 7, y + 2, 2, 2);
+
+                ctx.fillStyle = TRACK_SPECKLE_LIGHT;
+                ctx.fillRect(x + 4, y + 8, 2, 2);
+                ctx.fillRect(x + 12, y + 11, 2, 2);
+                ctx.fillRect(x + 2, y + 14, 2, 2);
+                ctx.fillRect(x + 9, y + 3, 2, 2);
+
+                // Extremely faint edge (almost invisible so blocks blend together)
+                ctx.strokeStyle = '#C8B89A';
+                ctx.lineWidth = 0.5;
+                ctx.strokeRect(x + 1, y + 1, TRACK_BLOCK_SIZE - 2, TRACK_BLOCK_SIZE - 2);
+            }
+
+            // === Full perimeter track - guaranteed clean corners ===
+            // Draw solid base rectangles first (ensures no missing corners)
+            ctx.fillStyle = TRACK_MAIN;
+            ctx.fillRect(fx + grassGap, fy + grassGap, TRACK_BLOCK_SIZE, fh - 2 * grassGap);           // Left
+            ctx.fillRect(fx + fw - TRACK_BLOCK_SIZE - grassGap, fy + grassGap, TRACK_BLOCK_SIZE, fh - 2 * grassGap); // Right
+            ctx.fillRect(fx + grassGap, fy + grassGap, fw - 2 * grassGap, TRACK_BLOCK_SIZE);           // Top
+            ctx.fillRect(fx + grassGap, fy + fh - TRACK_BLOCK_SIZE - grassGap, fw - 2 * grassGap, TRACK_BLOCK_SIZE); // Bottom
+
+            // Now overlay the textured blocks on top of the solid areas (for gravel look)
+            // Left vertical
+            for (let y = fy + grassGap; y < fy + fh - grassGap; y += TRACK_BLOCK_SIZE) {
+                drawTrackBlock(fx + grassGap, y);
+            }
+            // Right vertical
+            for (let y = fy + grassGap; y < fy + fh - grassGap; y += TRACK_BLOCK_SIZE) {
+                drawTrackBlock(fx + fw - TRACK_BLOCK_SIZE - grassGap, y);
+            }
+            // Top horizontal (skip corners already drawn by verticals)
+            for (let x = fx + grassGap + TRACK_BLOCK_SIZE; x < fx + fw - grassGap - TRACK_BLOCK_SIZE; x += TRACK_BLOCK_SIZE) {
+                drawTrackBlock(x, fy + grassGap);
+            }
+            // Bottom horizontal (skip corners already drawn by verticals)
+            for (let x = fx + grassGap + TRACK_BLOCK_SIZE; x < fx + fw - grassGap - TRACK_BLOCK_SIZE; x += TRACK_BLOCK_SIZE) {
+                drawTrackBlock(x, fy + fh - TRACK_BLOCK_SIZE - grassGap);
+            }
+
+            // Draw the 8×10 soil blocks — darker, speckled, naturally rough soil
+            for (let row = 0; row < FARM_SOIL_ROWS; row++) {
+                for (let col = 0; col < FARM_SOIL_COLS; col++) {
+                    const bx = FARM_SOIL_X + col * FARM_BLOCK_SIZE;
+                    const by = FARM_SOIL_Y + row * FARM_BLOCK_SIZE;
+
+                    // Dark natural soil base
+                    ctx.fillStyle = FARM_SOIL_MAIN;
+                    ctx.fillRect(bx, by, FARM_BLOCK_SIZE, FARM_BLOCK_SIZE);
+
+                    // Speckles for rough, natural look (scattered darker dots)
+                    ctx.fillStyle = FARM_SOIL_SPECKLE;
+                    ctx.fillRect(bx + 3, by + 4, 2, 2);
+                    ctx.fillRect(bx + 11, by + 7, 2, 2);
+                    ctx.fillRect(bx + 6, by + 12, 2, 2);
+                    ctx.fillRect(bx + 14, by + 3, 2, 2);
+                    ctx.fillRect(bx + 2, by + 9, 2, 2);
+                    ctx.fillRect(bx + 9, by + 14, 2, 2);
+
+                    // Very subtle edge variation for roughness
+                    ctx.fillStyle = FARM_SOIL_EDGE;
+                    ctx.fillRect(bx + 1, by + 1, FARM_BLOCK_SIZE - 2, 1);
+                    ctx.fillRect(bx + 1, by + 1, 1, FARM_BLOCK_SIZE - 2);
+
+                    // Faint block separation (keeps the "blocks" feel)
+                    ctx.strokeStyle = '#3D2B1F';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(bx + 1, by + 1, FARM_BLOCK_SIZE - 2, FARM_BLOCK_SIZE - 2);
+                }
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
         // DRAW HELPERS
         // ─────────────────────────────────────────────────────────────────────
 
@@ -1541,6 +1665,7 @@ function createSim() {
             ctx.fillStyle = COLORS.grass;
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
+            drawFarmPatch();           // ← NEW FARM PATCH (top-right)
             drawRoads();
             drawQuarryBlocks();
             drawStations();
