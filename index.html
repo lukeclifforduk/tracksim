@@ -16,11 +16,7 @@
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
 
-        // ─────────────────────────────────────────────────────────────────────
-        // SIMULATION LOGIC
-        // ─────────────────────────────────────────────────────────────────────
-
-function createSim() {
+        function createSim() {
 
   const WIDTH  = 1200;
   const HEIGHT = 700;
@@ -116,6 +112,38 @@ function createSim() {
   const botCol3X      = BOTTOM_QUARRY_OFFSET_X - ROAD_LEFT_COL  * BLOCK_SIZE + QUARRY_ROAD_MARGIN;
   const botCol13X     = BOTTOM_QUARRY_OFFSET_X - ROAD_RIGHT_COL * BLOCK_SIZE + QUARRY_ROAD_MARGIN;
 
+  const TOP_ROAD_COORDS = {
+    row4Y:      topRow4Y,
+    midY:       topMiddleRowY,
+    row14Y:     topRow14Y,
+    leftColX:   topCol3X,
+    rightColX:  topCol13X,
+    segments: [
+      [topCol3X, topRow4Y,      topCol13X, topRow4Y],
+      [topCol3X, topMiddleRowY, topCol13X, topMiddleRowY],
+      [topCol3X, topRow14Y,     topCol13X, topRow14Y],
+      [topCol3X, topRow4Y,      topCol3X,  topRow14Y],
+      [topCol13X,topRow4Y,      topCol13X, topRow14Y],
+    ],
+    parkingBand: [topCol13X, topRow4Y, STATION_X + STATION_WIDTH + 50, topRow4Y],
+  };
+
+  const BOT_ROAD_COORDS = {
+    row4Y:      botRow4Y,
+    midY:       botMiddleRowY,
+    row14Y:     botRow14Y,
+    leftColX:   botCol3X,
+    rightColX:  botCol13X,
+    segments: [
+      [botCol3X, botRow4Y,      botCol13X, botRow4Y],
+      [botCol3X, botMiddleRowY, botCol13X, botMiddleRowY],
+      [botCol3X, botRow14Y,     botCol13X, botRow14Y],
+      [botCol3X, botRow4Y,      botCol3X,  botRow14Y],
+      [botCol13X,botRow4Y,      botCol13X, botRow14Y],
+    ],
+    parkingBand: [botCol13X, botRow4Y, STATION_X - 50, botRow4Y],
+  };
+
   const FORKLIFT_BODY_HALF  = 12;
   const FORKLIFT_HOME_INSET = 2;
   const TOP_FORKLIFT_HOME_X    = STATION_X + STATION_WIDTH - FORKLIFT_HOME_INSET - FORKLIFT_BODY_HALF - FORKLIFT_HOME_INSET;
@@ -151,6 +179,261 @@ function createSim() {
   const FORKLIFT_SPEED         = 62;
   const FORKLIFT_WORK_TIME     = 0.75;
   const FORKLIFT_LENGTH        = 22;
+
+  // ─────────────────────────────────────────────────────────────────────
+  // WHEAT FARMING SYSTEM
+  // ─────────────────────────────────────────────────────────────────────
+  const FARM_CELL_STATES = {
+    EMPTY_SOIL: 0,
+    SEEDED: 1,
+    SEEDLING: 2,
+    GROWING: 3,
+    FULL_WHEAT: 4,
+    HARVESTED: 5
+  };
+
+  let farmCells = [];
+  let globalGrowthStage = FARM_CELL_STATES.EMPTY_SOIL;
+  let growthStageTimer = 0;
+  let seedingTimer = 0;
+  let firstHarvestedTime = null;
+
+  function initFarmCells() {
+    farmCells = [];
+    for (let r = 0; r < FARM_SOIL_ROWS; r++) {
+      for (let c = 0; c < FARM_SOIL_COLS; c++) {
+        const x = FARM_SOIL_X + c * FARM_BLOCK_SIZE;
+        const y = FARM_SOIL_Y + r * FARM_BLOCK_SIZE;
+        farmCells.push({
+          col: c,
+          row: r,
+          x: x,
+          y: y,
+          centerX: x + FARM_BLOCK_SIZE / 2,
+          centerY: y + FARM_BLOCK_SIZE / 2,
+          state: FARM_CELL_STATES.EMPTY_SOIL,
+          reserved: false
+        });
+      }
+    }
+  }
+
+  function allCellsState(state) {
+    return farmCells.every(cell => cell.state === state);
+  }
+
+  function hasHarvestedBlocks() {
+    return farmCells.some(cell => cell.state === FARM_CELL_STATES.HARVESTED && !cell.reserved);
+  }
+
+  function updateFarmGrowth(dt) {
+    if (globalGrowthStage === FARM_CELL_STATES.EMPTY_SOIL) {
+      seedingTimer -= dt;
+      if (seedingTimer <= 0) {
+        globalGrowthStage = FARM_CELL_STATES.SEEDED;
+        farmCells.forEach(cell => { cell.state = FARM_CELL_STATES.SEEDED; });
+        growthStageTimer = 2.5 + Math.random() * 1.5;
+      }
+    } else if (globalGrowthStage < FARM_CELL_STATES.FULL_WHEAT) {
+      growthStageTimer -= dt;
+      if (growthStageTimer <= 0) {
+        globalGrowthStage++;
+        const prev = globalGrowthStage - 1;
+        farmCells.forEach(cell => {
+          if (cell.state === prev && cell.state !== FARM_CELL_STATES.HARVESTED) {
+            cell.state = globalGrowthStage;
+          }
+        });
+        if (globalGrowthStage < FARM_CELL_STATES.FULL_WHEAT) {
+          const baseDelays = [0, 2.5, 4, 5.5];
+          growthStageTimer = baseDelays[globalGrowthStage] + Math.random() * 2;
+        }
+      }
+    }
+  }
+
+  function generateSerpentinePath() {
+    const path = [];
+    for (let c = 0; c < FARM_SOIL_COLS; c++) {
+      if (c % 2 === 0) {
+        for (let r = 0; r < FARM_SOIL_ROWS; r++) path.push({col: c, row: r});
+      } else {
+        for (let r = FARM_SOIL_ROWS - 1; r >= 0; r--) path.push({col: c, row: r});
+      }
+    }
+    return path;
+  }
+
+  class Harvester {
+    constructor() {
+      this.state = 'PARKED';
+      this.x = FARM_OUTER_X + FARM_BLOCK_SIZE * 1.5;
+      this.y = FARM_OUTER_Y + FARM_BLOCK_SIZE * 0.5;
+      this.angle = Math.PI / 2;
+      this.speed = 55;
+      this.path = [];
+      this.pathIndex = 0;
+      this.currentCell = null;
+      this.timer = 0;
+    }
+
+    update(dt) {
+      if (this.state === 'PARKED') {
+        if (allCellsState(FARM_CELL_STATES.FULL_WHEAT)) {
+          this.path = generateSerpentinePath();
+          this.pathIndex = 0;
+          const start = this.path[0];
+          this.currentCell = farmCells.find(cell => cell.col === start.col && cell.row === start.row);
+          this.state = 'MOVING_TO_CELL';
+        }
+        return;
+      }
+
+      if (this.state === 'MOVING_TO_CELL') {
+        if (!this.currentCell) return;
+        const dx = this.currentCell.centerX - this.x;
+        const dy = this.currentCell.centerY - this.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 6) {
+          this.x = this.currentCell.centerX;
+          this.y = this.currentCell.centerY;
+          this.state = 'HARVESTING';
+          this.timer = 0.35 + Math.random() * 0.25;
+        } else {
+          this.angle = Math.atan2(dy, dx);
+          const moveDist = Math.min(this.speed * dt, dist);
+          this.x += Math.cos(this.angle) * moveDist;
+          this.y += Math.sin(this.angle) * moveDist;
+        }
+      } else if (this.state === 'HARVESTING') {
+        this.timer -= dt;
+        if (this.timer <= 0 && this.currentCell && this.currentCell.state === FARM_CELL_STATES.FULL_WHEAT) {
+          this.currentCell.state = FARM_CELL_STATES.HARVESTED;
+          if (firstHarvestedTime === null) firstHarvestedTime = Date.now();
+          this.currentCell.reserved = false;
+          this.pathIndex++;
+          if (this.pathIndex < this.path.length) {
+            const next = this.path[this.pathIndex];
+            this.currentCell = farmCells.find(cell => cell.col === next.col && cell.row === next.row);
+            this.state = 'MOVING_TO_CELL';
+          } else {
+            this.state = 'DONE';
+          }
+        }
+      }
+    }
+  }
+
+  let harvester = null;
+
+  // ─────────────────────────────────────────────────────────────────────
+  // TRACTOR — now follows exact same serpentine logic as Harvester
+  // ─────────────────────────────────────────────────────────────────────
+  class Tractor {
+    constructor() {
+      this.state = 'PARKED';
+      this.x = FARM_OUTER_X + FARM_BLOCK_SIZE * 1.5;
+      this.y = FARM_OUTER_Y + FARM_OUTER_H + FARM_BLOCK_SIZE * 0.5;
+      this.angle = 0;
+      this.trailerCapacity = 8;
+      this.loaded = 0;
+      this.speed = 48;
+      this.craneTimer = 0;
+      this.targetCell = null;        // renamed for clarity
+      this.path = [];
+      this.pathIndex = 0;
+      this.parkedTime = 0;
+      this.parkTimer = Math.random() * 2 + 1.5;
+      this.delayActive = false;
+      this.delayTimer = 0;
+    }
+
+    update(dt) {
+      this.parkedTime += dt;
+
+      if (this.state === 'PARKED') {
+        this.parkTimer -= dt;
+
+        // 5-second delay after first harvested block appears
+        if (hasHarvestedBlocks() && !this.delayActive && firstHarvestedTime !== null) {
+          this.delayActive = true;
+          this.delayTimer = 5.0;
+        }
+        if (this.delayActive) {
+          this.delayTimer -= dt;
+          if (this.delayTimer <= 0) {
+            this.delayActive = false;
+            this.path = generateSerpentinePath();
+            this.pathIndex = 0;
+            const start = this.path[0];
+            this.targetCell = farmCells.find(cell => cell.col === start.col && cell.row === start.row);
+            this.state = 'MOVING_TO_CELL';
+          }
+          return;
+        }
+        return;
+      }
+
+      if (this.state === 'MOVING_TO_CELL') {
+        if (!this.targetCell) {
+          this.state = 'PARKED';
+          return;
+        }
+        const dx = this.targetCell.centerX - this.x;
+        const dy = this.targetCell.centerY - this.y;
+        const dist = Math.hypot(dx, dy);
+
+        if (dist < 8) {
+          this.x = this.targetCell.centerX;
+          this.y = this.targetCell.centerY;
+
+          // Only harvest if the cell is ready
+          if (this.targetCell.state === FARM_CELL_STATES.HARVESTED && !this.targetCell.reserved) {
+            this.state = 'LOADING';
+            this.craneTimer = 1.0;           // exactly 1 second pause
+            this.targetCell.reserved = true;
+          } else {
+            // skip non-harvested cell and continue along path
+            this.pathIndex++;
+            if (this.pathIndex < this.path.length) {
+              const next = this.path[this.pathIndex];
+              this.targetCell = farmCells.find(cell => cell.col === next.col && cell.row === next.row);
+            } else {
+              this.state = 'PARKED';
+              this.loaded = 0;
+            }
+          }
+        } else {
+          this.angle = Math.atan2(dy, dx);
+          const moveDist = Math.min(this.speed * dt, dist);
+          this.x += Math.cos(this.angle) * moveDist;
+          this.y += Math.sin(this.angle) * moveDist;
+        }
+      } 
+      else if (this.state === 'LOADING') {
+        this.craneTimer -= dt;
+        if (this.craneTimer <= 0 && this.targetCell) {
+          this.targetCell.state = FARM_CELL_STATES.HARVESTED + 1; // collected
+          this.loaded = Math.min(this.trailerCapacity, this.loaded + 1);
+          this.targetCell.reserved = false;
+          this.targetCell = null;
+
+          // continue to next cell in serpentine path
+          this.pathIndex++;
+          if (this.pathIndex < this.path.length) {
+            const next = this.path[this.pathIndex];
+            this.targetCell = farmCells.find(cell => cell.col === next.col && cell.row === next.row);
+            this.state = 'MOVING_TO_CELL';
+          } else {
+            this.state = 'PARKED';
+            this.loaded = 0;
+          }
+        }
+      }
+    }
+  }
+
+  let tractor = null;
 
   function getTopStorageSlotPosition(index) {
     return {
@@ -194,45 +477,13 @@ function createSim() {
   }
 
   function isRoadBlock(row, col) {
-    if (row === ROAD_ENTRY_ROW && col >= ROAD_LEFT_COL)                                    return true;
-    if (row === ROAD_FAR_ROW   && col >= ROAD_LEFT_COL && col <= ROAD_RIGHT_COL)           return true;
-    if (row === ROAD_MID_ROW   && col >= ROAD_LEFT_COL && col <= ROAD_RIGHT_COL)           return true;
-    if (col === ROAD_LEFT_COL  && row >= ROAD_ENTRY_ROW && row <= ROAD_FAR_ROW)            return true;
-    if (col === ROAD_RIGHT_COL && row >= ROAD_ENTRY_ROW && row <= ROAD_FAR_ROW)            return true;
+    if (row === ROAD_ENTRY_ROW && col >= ROAD_LEFT_COL) return true;
+    if (row === ROAD_FAR_ROW   && col >= ROAD_LEFT_COL && col <= ROAD_RIGHT_COL) return true;
+    if (row === ROAD_MID_ROW   && col >= ROAD_LEFT_COL && col <= ROAD_RIGHT_COL) return true;
+    if (col === ROAD_LEFT_COL  && row >= ROAD_ENTRY_ROW && row <= ROAD_FAR_ROW) return true;
+    if (col === ROAD_RIGHT_COL && row >= ROAD_ENTRY_ROW && row <= ROAD_FAR_ROW) return true;
     return false;
   }
-
-  const TOP_ROAD_COORDS = {
-    row4Y:      topRow4Y,
-    midY:       topMiddleRowY,
-    row14Y:     topRow14Y,
-    leftColX:   topCol3X,
-    rightColX:  topCol13X,
-    segments: [
-      [topCol3X, topRow4Y,      topCol13X, topRow4Y],
-      [topCol3X, topMiddleRowY, topCol13X, topMiddleRowY],
-      [topCol3X, topRow14Y,     topCol13X, topRow14Y],
-      [topCol3X, topRow4Y,      topCol3X,  topRow14Y],
-      [topCol13X,topRow4Y,      topCol13X, topRow14Y],
-    ],
-    parkingBand: [topCol13X, topRow4Y, STATION_X + STATION_WIDTH + 50, topRow4Y],
-  };
-
-  const BOT_ROAD_COORDS = {
-    row4Y:      botRow4Y,
-    midY:       botMiddleRowY,
-    row14Y:     botRow14Y,
-    leftColX:   botCol3X,
-    rightColX:  botCol13X,
-    segments: [
-      [botCol3X, botRow4Y,      botCol13X, botRow4Y],
-      [botCol3X, botMiddleRowY, botCol13X, botMiddleRowY],
-      [botCol3X, botRow14Y,     botCol13X, botRow14Y],
-      [botCol3X, botRow4Y,      botCol3X,  botRow14Y],
-      [botCol13X,botRow4Y,      botCol13X, botRow14Y],
-    ],
-    parkingBand: [botCol13X, botRow4Y, STATION_X - 50, botRow4Y],
-  };
 
   function closestRoadPoint(px, py, rc) {
     let best = null, bestDist = Infinity;
@@ -305,12 +556,6 @@ function createSim() {
     const theta = Math.PI / 2 + (d / CURVE_RADIUS);
     return { x: LEFT_CX + CURVE_RADIUS * Math.cos(theta), y: CENTER_Y + CURVE_RADIUS * Math.sin(theta), angle: theta + Math.PI / 2 };
   }
-
-  const topBlocks    = [];
-  const bottomBlocks = [];
-  const trucks       = [];
-  let   forklifts    = [];
-  let   cranes       = [];
 
   const SIDE_CONFIGS = {
     top: {
@@ -574,8 +819,6 @@ function createSim() {
               cfg.blockOnPickup(this.pickupTarget);
               this.pickupTarget.reserved = false; this.pickupTarget = null; this.hasBlock = true;
             }
-            // Clear any stale safety-net claim — the slot it pointed at stays reserved=true
-            // if it was never deposited into, permanently locking it out of future scans.
             if (this.safetyNetTarget) {
               this.safetyNetTarget.reserved = false;
               this.safetyNetTarget = null;
@@ -1059,6 +1302,12 @@ function createSim() {
     }
   }
 
+  const topBlocks    = [];
+  const bottomBlocks = [];
+  const trucks       = [];
+  let   forklifts    = [];
+  let   cranes       = [];
+
   function initSim() {
     SIDE_CONFIGS.top.blocks    = topBlocks;
     SIDE_CONFIGS.bottom.blocks = bottomBlocks;
@@ -1095,6 +1344,14 @@ function createSim() {
     trainAtStation     = null;
     forklifts = [new Forklift('top'), new Forklift('bottom')];
     cranes    = [new Crane('top'),    new Crane('bottom')];
+
+    initFarmCells();
+    seedingTimer = 2 + Math.random() * 3;
+    globalGrowthStage = FARM_CELL_STATES.EMPTY_SOIL;
+    growthStageTimer = 0;
+    firstHarvestedTime = null;
+    harvester = new Harvester();
+    tractor = new Tractor();
   }
 
   function updateTrain(dt) {
@@ -1142,6 +1399,10 @@ function createSim() {
     for (const t of trucks)    t.update(dt);
     for (const f of forklifts) f.update(dt);
     for (const c of cranes)    c.update(dt);
+
+    updateFarmGrowth(dt);
+    if (harvester) harvester.update(dt);
+    if (tractor) tractor.update(dt);
   }
 
   return {
@@ -1159,6 +1420,9 @@ function createSim() {
     get cranes()            { return cranes; },
     get topBlocks()         { return topBlocks; },
     get bottomBlocks()      { return bottomBlocks; },
+    get farmCells()         { return farmCells; },
+    get harvester()         { return harvester; },
+    get tractor()           { return tractor; },
     geometry: {
       TOTAL_TRACK_LENGTH, BLOCK_SIZE, STORAGE_CAPACITY,
       STORAGE_COLS, STORAGE_CELL_STEP, STORAGE_CELL_MARGIN, STORAGE_CELL_SIZE, STORAGE_CELL_HALF,
@@ -1186,7 +1450,7 @@ function createSim() {
 }
 
         // ─────────────────────────────────────────────────────────────────────
-        // RENDERING — COLOURS & CONSTANTS
+        // RENDERING
         // ─────────────────────────────────────────────────────────────────────
         const COLORS = {
             grass: '#2e8b57', trackBed: '#654321', rail: '#D3D3D3',
@@ -1199,133 +1463,137 @@ function createSim() {
             forkliftBody: '#ffcc00', forkliftForks: '#bbbbbb',
         };
 
-        // ─────────────────────────────────────────────────────────────────────
-        // FARM PATCH (NEW FEATURE)
-        // ─────────────────────────────────────────────────────────────────────
         const FARM_SOIL_COLS = 8;
         const FARM_SOIL_ROWS = 10;
         const FARM_BLOCK_SIZE = 18;
-        const FARM_GRASS_BORDER = 18; // 1 block border of grass
-        const FARM_FENCE_THICK = 5;
-        const FARM_WOOD_COLOR = '#8B5A2B';      // warm wood brown
-        const FARM_POST_COLOR = '#5C4033';      // darker posts
-        const FARM_SOIL_MAIN = '#5C4033';       // darker natural soil
-        const FARM_SOIL_SPECKLE = '#3D2B1F';    // darker speckles for rough look
-        const FARM_SOIL_EDGE = '#7B5E3F';       // subtle edge variation
-
-        // Position: exactly 18px from right edge of canvas (1200), top-right, building right + down
+        const FARM_GRASS_BORDER = 18;
         const FARM_RIGHT_MARGIN = 18;
         const FARM_SOIL_X = 1200 - FARM_RIGHT_MARGIN - FARM_GRASS_BORDER - (FARM_SOIL_COLS * FARM_BLOCK_SIZE);
-        const FARM_SOIL_Y = 7 * 18; // exactly 126px from top
-
+        const FARM_SOIL_Y = 7 * 18;
         const FARM_OUTER_X = FARM_SOIL_X - FARM_GRASS_BORDER;
         const FARM_OUTER_Y = FARM_SOIL_Y - FARM_GRASS_BORDER;
         const FARM_OUTER_W = FARM_SOIL_COLS * FARM_BLOCK_SIZE + 2 * FARM_GRASS_BORDER;
         const FARM_OUTER_H = FARM_SOIL_ROWS * FARM_BLOCK_SIZE + 2 * FARM_GRASS_BORDER;
 
-        function drawFarmPatch() {
-            const fx = FARM_OUTER_X;
-            const fy = FARM_OUTER_Y;
-            const fw = FARM_OUTER_W;
-            const fh = FARM_OUTER_H;
+        const FARM_CELL_STATES = {
+          EMPTY_SOIL: 0, SEEDED: 1, SEEDLING: 2, GROWING: 3, FULL_WHEAT: 4, HARVESTED: 5
+        };
 
-            // === Full perimeter light dirt/sandy track made of textured blocks ===
-            // 18px wide track with 3px grass gap to soil blocks (non-visibly separated look)
-            const TRACK_BLOCK_SIZE = 18;
-            const grassGap = 0; // gap removed as requested - track now touches soil directly
+        function drawWheatCell(cell) {
+          const bx = cell.x;
+          const by = cell.y;
+          const s = FARM_BLOCK_SIZE;
+          let baseColor = '#5C4033';
 
-            // Light sandy/gravel track colors — tuned for top-down farm pixel art (Stardew-style warm tan)
-            const TRACK_MAIN = '#C9A87A';        // warm sandy tan (classic farm path base)
-            const TRACK_SPECKLE_DARK = '#8B7355'; // warmer gravel brown
-            const TRACK_SPECKLE_LIGHT = '#D8C8A0'; // soft sandy highlight
+          switch (cell.state) {
+            case FARM_CELL_STATES.EMPTY_SOIL:
+            case FARM_CELL_STATES.SEEDED:
+              baseColor = '#5C4033';
+              break;
+            case FARM_CELL_STATES.SEEDLING:
+              baseColor = '#4a8c4a';
+              break;
+            case FARM_CELL_STATES.GROWING:
+              baseColor = '#5aa55a';
+              break;
+            case FARM_CELL_STATES.FULL_WHEAT:
+              baseColor = '#e8d050';
+              ctx.fillStyle = baseColor;
+              ctx.fillRect(bx, by, s, s);
+              ctx.strokeStyle = '#c8b030';
+              ctx.lineWidth = 2;
+              const stalks = [4,7,10,13,16];
+              for (let i = 0; i < 5; i++) {
+                const wx = bx + stalks[i];
+                ctx.beginPath();
+                ctx.moveTo(wx, by + 14);
+                ctx.lineTo(wx + (i % 2 ? 1 : -1), by + 3);
+                ctx.stroke();
+              }
+              return;
+            case FARM_CELL_STATES.HARVESTED:
+              ctx.fillStyle = '#5C4033';
+              ctx.fillRect(bx, by, s, s);
+              ctx.fillStyle = '#d4a528';
+              ctx.fillRect(bx + 4, by + 4, s - 8, s - 10);
+              ctx.fillStyle = '#f0d060';
+              ctx.fillRect(bx + 6, by + 6, s - 12, s - 14);
+              ctx.fillStyle = '#c09030';
+              ctx.fillRect(bx + 7, by + s - 9, s - 14, 5);
+              ctx.strokeStyle = '#3D2B1F';
+              ctx.lineWidth = 2;
+              ctx.strokeRect(bx + 3, by + 3, s - 6, s - 8);
+              return;
+          }
 
-            // Helper to draw one track block with gravelly texture (no hard separation)
-            function drawTrackBlock(x, y) {
-                // Base sandy color
-                ctx.fillStyle = TRACK_MAIN;
-                ctx.fillRect(x, y, TRACK_BLOCK_SIZE, TRACK_BLOCK_SIZE);
+          ctx.fillStyle = baseColor;
+          ctx.fillRect(bx, by, s, s);
 
-                // Gravel/sand speckles (darker + lighter dots for textured appearance)
-                ctx.fillStyle = TRACK_SPECKLE_DARK;
-                ctx.fillRect(x + 3, y + 5, 2, 2);
-                ctx.fillRect(x + 10, y + 9, 2, 2);
-                ctx.fillRect(x + 5, y + 13, 2, 2);
-                ctx.fillRect(x + 14, y + 4, 2, 2);
-                ctx.fillRect(x + 7, y + 2, 2, 2);
+          ctx.fillStyle = '#3D2B1F';
+          ctx.fillRect(bx + 4, by + 5, 2, 2);
+          ctx.fillRect(bx + 11, by + 9, 2, 2);
 
-                ctx.fillStyle = TRACK_SPECKLE_LIGHT;
-                ctx.fillRect(x + 4, y + 8, 2, 2);
-                ctx.fillRect(x + 12, y + 11, 2, 2);
-                ctx.fillRect(x + 2, y + 14, 2, 2);
-                ctx.fillRect(x + 9, y + 3, 2, 2);
+          if (cell.state === FARM_CELL_STATES.SEEDLING) {
+            ctx.fillStyle = '#2e6a2e';
+            ctx.fillRect(bx + 7, by + 8, 4, 6);
+          } else if (cell.state === FARM_CELL_STATES.GROWING) {
+            ctx.fillStyle = '#3a7a3a';
+            ctx.fillRect(bx + 5, by + 4, 3, 10);
+            ctx.fillRect(bx + 10, by + 6, 3, 9);
+          }
 
-                // Extremely faint edge (almost invisible so blocks blend together)
-                ctx.strokeStyle = '#C8B89A';
-                ctx.lineWidth = 0.5;
-                ctx.strokeRect(x + 1, y + 1, TRACK_BLOCK_SIZE - 2, TRACK_BLOCK_SIZE - 2);
-            }
-
-            // === Full perimeter track - guaranteed clean corners ===
-            // Draw solid base rectangles first (ensures no missing corners)
-            ctx.fillStyle = TRACK_MAIN;
-            ctx.fillRect(fx + grassGap, fy + grassGap, TRACK_BLOCK_SIZE, fh - 2 * grassGap);           // Left
-            ctx.fillRect(fx + fw - TRACK_BLOCK_SIZE - grassGap, fy + grassGap, TRACK_BLOCK_SIZE, fh - 2 * grassGap); // Right
-            ctx.fillRect(fx + grassGap, fy + grassGap, fw - 2 * grassGap, TRACK_BLOCK_SIZE);           // Top
-            ctx.fillRect(fx + grassGap, fy + fh - TRACK_BLOCK_SIZE - grassGap, fw - 2 * grassGap, TRACK_BLOCK_SIZE); // Bottom
-
-            // Now overlay the textured blocks on top of the solid areas (for gravel look)
-            // Left vertical
-            for (let y = fy + grassGap; y < fy + fh - grassGap; y += TRACK_BLOCK_SIZE) {
-                drawTrackBlock(fx + grassGap, y);
-            }
-            // Right vertical
-            for (let y = fy + grassGap; y < fy + fh - grassGap; y += TRACK_BLOCK_SIZE) {
-                drawTrackBlock(fx + fw - TRACK_BLOCK_SIZE - grassGap, y);
-            }
-            // Top horizontal (skip corners already drawn by verticals)
-            for (let x = fx + grassGap + TRACK_BLOCK_SIZE; x < fx + fw - grassGap - TRACK_BLOCK_SIZE; x += TRACK_BLOCK_SIZE) {
-                drawTrackBlock(x, fy + grassGap);
-            }
-            // Bottom horizontal (skip corners already drawn by verticals)
-            for (let x = fx + grassGap + TRACK_BLOCK_SIZE; x < fx + fw - grassGap - TRACK_BLOCK_SIZE; x += TRACK_BLOCK_SIZE) {
-                drawTrackBlock(x, fy + fh - TRACK_BLOCK_SIZE - grassGap);
-            }
-
-            // Draw the 8×10 soil blocks — darker, speckled, naturally rough soil
-            for (let row = 0; row < FARM_SOIL_ROWS; row++) {
-                for (let col = 0; col < FARM_SOIL_COLS; col++) {
-                    const bx = FARM_SOIL_X + col * FARM_BLOCK_SIZE;
-                    const by = FARM_SOIL_Y + row * FARM_BLOCK_SIZE;
-
-                    // Dark natural soil base
-                    ctx.fillStyle = FARM_SOIL_MAIN;
-                    ctx.fillRect(bx, by, FARM_BLOCK_SIZE, FARM_BLOCK_SIZE);
-
-                    // Speckles for rough, natural look (scattered darker dots)
-                    ctx.fillStyle = FARM_SOIL_SPECKLE;
-                    ctx.fillRect(bx + 3, by + 4, 2, 2);
-                    ctx.fillRect(bx + 11, by + 7, 2, 2);
-                    ctx.fillRect(bx + 6, by + 12, 2, 2);
-                    ctx.fillRect(bx + 14, by + 3, 2, 2);
-                    ctx.fillRect(bx + 2, by + 9, 2, 2);
-                    ctx.fillRect(bx + 9, by + 14, 2, 2);
-
-                    // Very subtle edge variation for roughness
-                    ctx.fillStyle = FARM_SOIL_EDGE;
-                    ctx.fillRect(bx + 1, by + 1, FARM_BLOCK_SIZE - 2, 1);
-                    ctx.fillRect(bx + 1, by + 1, 1, FARM_BLOCK_SIZE - 2);
-
-                    // Faint block separation (keeps the "blocks" feel)
-                    ctx.strokeStyle = '#3D2B1F';
-                    ctx.lineWidth = 1;
-                    ctx.strokeRect(bx + 1, by + 1, FARM_BLOCK_SIZE - 2, FARM_BLOCK_SIZE - 2);
-                }
-            }
+          ctx.strokeStyle = '#3D2B1F';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(bx + 1, by + 1, s - 2, s - 2);
         }
 
-        // ─────────────────────────────────────────────────────────────────────
-        // DRAW HELPERS
-        // ─────────────────────────────────────────────────────────────────────
+        function drawFarmPatch() {
+          const fx = FARM_OUTER_X;
+          const fy = FARM_OUTER_Y;
+          const fw = FARM_OUTER_W;
+          const fh = FARM_OUTER_H;
+
+          const TRACK_BLOCK_SIZE = 18;
+          const TRACK_MAIN = '#C9A87A';
+          const TRACK_SPECKLE_DARK = '#8B7355';
+          const TRACK_SPECKLE_LIGHT = '#D8C8A0';
+
+          function drawTrackBlock(x, y) {
+            ctx.fillStyle = TRACK_MAIN;
+            ctx.fillRect(x, y, TRACK_BLOCK_SIZE, TRACK_BLOCK_SIZE);
+            ctx.fillStyle = TRACK_SPECKLE_DARK;
+            ctx.fillRect(x + 3, y + 5, 2, 2);
+            ctx.fillRect(x + 10, y + 9, 2, 2);
+            ctx.fillRect(x + 5, y + 13, 2, 2);
+            ctx.fillRect(x + 14, y + 4, 2, 2);
+            ctx.fillRect(x + 7, y + 2, 2, 2);
+            ctx.fillStyle = TRACK_SPECKLE_LIGHT;
+            ctx.fillRect(x + 4, y + 8, 2, 2);
+            ctx.fillRect(x + 12, y + 11, 2, 2);
+            ctx.fillRect(x + 2, y + 14, 2, 2);
+            ctx.fillRect(x + 9, y + 3, 2, 2);
+            ctx.strokeStyle = '#C8B89A';
+            ctx.lineWidth = 0.5;
+            ctx.strokeRect(x + 1, y + 1, TRACK_BLOCK_SIZE - 2, TRACK_BLOCK_SIZE - 2);
+          }
+
+          ctx.fillStyle = TRACK_MAIN;
+          ctx.fillRect(fx, fy, TRACK_BLOCK_SIZE, fh);
+          ctx.fillRect(fx + fw - TRACK_BLOCK_SIZE, fy, TRACK_BLOCK_SIZE, fh);
+          ctx.fillRect(fx, fy, fw, TRACK_BLOCK_SIZE);
+          ctx.fillRect(fx, fy + fh - TRACK_BLOCK_SIZE, fw, TRACK_BLOCK_SIZE);
+
+          for (let y = fy; y < fy + fh; y += TRACK_BLOCK_SIZE) drawTrackBlock(fx, y);
+          for (let y = fy; y < fy + fh; y += TRACK_BLOCK_SIZE) drawTrackBlock(fx + fw - TRACK_BLOCK_SIZE, y);
+          for (let x = fx + TRACK_BLOCK_SIZE; x < fx + fw - TRACK_BLOCK_SIZE; x += TRACK_BLOCK_SIZE) drawTrackBlock(x, fy);
+          for (let x = fx + TRACK_BLOCK_SIZE; x < fx + fw - TRACK_BLOCK_SIZE; x += TRACK_BLOCK_SIZE) drawTrackBlock(x, fy + fh - TRACK_BLOCK_SIZE);
+
+          if (sim && sim.farmCells) {
+            for (const cell of sim.farmCells) {
+              drawWheatCell(cell);
+            }
+          }
+        }
 
         function drawStorage(sx, sy, count) {
             ctx.strokeStyle = '#ffffff';
@@ -1409,10 +1677,6 @@ function createSim() {
             ctx.setLineDash([]);
         }
 
-        // ─────────────────────────────────────────────────────────────────────
-        // SCENE DRAW FUNCTIONS
-        // ─────────────────────────────────────────────────────────────────────
-
         function drawRoads() {
             ctx.lineJoin = 'round';
             ctx.lineCap  = 'square';
@@ -1479,17 +1743,6 @@ function createSim() {
                     ctx.stroke();
                 });
             });
-        }
-
-        // ─────────────────────────────────────────────────────────────────────
-        // ENTITY DRAW FUNCTIONS
-        // ─────────────────────────────────────────────────────────────────────
-
-        function drawBlock(cx, cy) {
-            const s = BLOCK_SIZE - 5;
-            ctx.fillStyle = COLORS.quarryMain; ctx.fillRect(cx - s/2, cy - s/2, s, s);
-            ctx.fillStyle = COLORS.quarryMid;  ctx.fillRect(cx - s/2+2, cy - s/2+2, s-4, s-4);
-            ctx.fillStyle = COLORS.quarryDeep; ctx.fillRect(cx - 1.5, cy - 1.5, 3, 3);
         }
 
         function drawTruck(truck) {
@@ -1622,9 +1875,40 @@ function createSim() {
             ctx.restore();
         }
 
-        // ─────────────────────────────────────────────────────────────────────
-        // MAIN LOOP
-        // ─────────────────────────────────────────────────────────────────────
+        function drawHarvester(h) {
+          if (!h) return;
+          ctx.save();
+          ctx.translate(h.x, h.y);
+          ctx.rotate(h.angle);
+          ctx.fillStyle = '#27ae60';
+          ctx.fillRect(-12, -10, 28, 18);
+          ctx.fillStyle = '#1e8c4f';
+          ctx.fillRect(12, -13, 8, 24);
+          ctx.fillStyle = '#2c3e50';
+          ctx.fillRect(-12, -13, 6, 26);
+          ctx.restore();
+        }
+
+        function drawTractor(t) {
+          if (!t) return;
+          ctx.save();
+          ctx.translate(t.x, t.y);
+          ctx.rotate(t.angle);
+          ctx.fillStyle = '#e67e22';
+          ctx.fillRect(-18, -10, 32, 16);
+          ctx.fillStyle = '#f1c40f';
+          ctx.fillRect(10, -8, 12, 12);
+          if (t.loaded > 0) {
+            ctx.fillStyle = '#f0d060';
+            for (let i = 0; i < t.loaded; i++) {
+              const tx = -38 + (i % 4) * 5;
+              const ty = -7 + Math.floor(i / 4) * 6;
+              ctx.fillRect(tx, ty, 4, 4);
+            }
+          }
+          ctx.restore();
+        }
+
         const sim = createSim();
 
         const {
@@ -1665,7 +1949,7 @@ function createSim() {
             ctx.fillStyle = COLORS.grass;
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-            drawFarmPatch();           // ← NEW FARM PATCH (top-right)
+            drawFarmPatch();
             drawRoads();
             drawQuarryBlocks();
             drawStations();
@@ -1687,6 +1971,9 @@ function createSim() {
 
             for (const c of sim.cranes) drawCrane(c);
             for (const c of sim.cranes) drawCraneCross(c.hookX, c.hookY, 0.36);
+
+            drawHarvester(sim.harvester);
+            drawTractor(sim.tractor);
 
             requestAnimationFrame(animate);
         }
