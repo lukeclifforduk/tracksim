@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -335,7 +336,7 @@
       this.x = FARM_OUTER_X + FARM_BLOCK_SIZE * 1.5;
       this.y = FARM_OUTER_Y + FARM_OUTER_H + FARM_BLOCK_SIZE * 0.5;
       this.angle = 0;
-      this.trailerCapacity = 8;
+      this.trailerCapacity = 10;
       this.loaded = 0;
       this.speed = 48;
       this.craneTimer = 0;
@@ -352,12 +353,16 @@
       this.parkedTime += dt;
 
       if (this.state === 'PARKED') {
+        if (this.loaded >= this.trailerCapacity) {
+          this.parkTimer = 999999; // stay parked and waiting with full trailer (8 blocks)
+          return;
+        }
         this.parkTimer -= dt;
 
         // 5-second delay after first harvested block appears
         if (hasHarvestedBlocks() && !this.delayActive && firstHarvestedTime !== null) {
           this.delayActive = true;
-          this.delayTimer = 5.0;
+          this.delayTimer = 7.0;
         }
         if (this.delayActive) {
           this.delayTimer -= dt;
@@ -417,16 +422,21 @@
           this.loaded = Math.min(this.trailerCapacity, this.loaded + 1);
           this.targetCell.reserved = false;
           this.targetCell = null;
-
-          // continue to next cell in serpentine path
-          this.pathIndex++;
-          if (this.pathIndex < this.path.length) {
-            const next = this.path[this.pathIndex];
-            this.targetCell = farmCells.find(cell => cell.col === next.col && cell.row === next.row);
-            this.state = 'MOVING_TO_CELL';
-          } else {
+          if (this.loaded >= this.trailerCapacity) {
             this.state = 'PARKED';
-            this.loaded = 0;
+            this.path = [];
+            this.pathIndex = 0;
+          } else {
+            // continue to next cell in serpentine path
+            this.pathIndex++;
+            if (this.pathIndex < this.path.length) {
+              const next = this.path[this.pathIndex];
+              this.targetCell = farmCells.find(cell => cell.col === next.col && cell.row === next.row);
+              this.state = 'MOVING_TO_CELL';
+            } else {
+              this.state = 'PARKED';
+              this.loaded = 0;
+            }
           }
         }
       }
@@ -1894,18 +1904,44 @@
           ctx.save();
           ctx.translate(t.x, t.y);
           ctx.rotate(t.angle);
-          ctx.fillStyle = '#e67e22';
-          ctx.fillRect(-18, -10, 32, 16);
-          ctx.fillStyle = '#f1c40f';
-          ctx.fillRect(10, -8, 12, 12);
+          // Trailer: gap extended, length +1px final (42px total at back, blocks kept centered), width +3px (22px), blocks 7x8 rects, 2x5=10 with middle row gap centered, yellow bundled style
+          ctx.fillStyle = '#5d6d7e';
+          ctx.fillRect(-58, -11, 42, 22);
+          ctx.strokeStyle = '#2c3e50';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(-58, -11, 42, 22);
+          // Hitch (extended gap for clear visible separation)
+          ctx.fillStyle = '#34495e';
+          ctx.fillRect(-21, -2, 4, 4);
+          // Loaded blocks (10 total) - rectangles 7 wide x 8 high (other way: short in column/x dir, wide in row/y dir, 5 cols x 2 rows), middle gap centered, yellow bundled style
           if (t.loaded > 0) {
-            ctx.fillStyle = '#f0d060';
+            ctx.fillStyle = '#e8d050';
             for (let i = 0; i < t.loaded; i++) {
-              const tx = -38 + (i % 4) * 5;
-              const ty = -7 + Math.floor(i / 4) * 6;
-              ctx.fillRect(tx, ty, 4, 4);
+              const tx = -57 + (i % 5) * 8;
+              const ty = -9 + Math.floor(i / 5) * 9;
+              ctx.fillRect(tx, ty, 7, 8);
+              ctx.fillStyle = '#d4ac0d';
+              ctx.fillRect(tx + 1, ty + 1, 5, 6);
+              ctx.fillStyle = '#e8d050';
             }
           }
+          // Tractor red, massively reduced size for proportion (total ~30px long like truck)
+          // Wide rear body (red)
+          ctx.fillStyle = '#c0392b';
+          ctx.fillRect(-14, -9, 20, 18);
+          // Narrow front hood
+          ctx.fillStyle = '#e74c3c';
+          ctx.fillRect(4, -5, 10, 10);
+          // Cab
+          ctx.fillStyle = '#ecf0f1';
+          ctx.fillRect(-8, -7, 7, 14);
+          // Big rear wheels (scaled down)
+          ctx.fillStyle = '#1a252f';
+          ctx.fillRect(-11, -12, 7, 5);
+          ctx.fillRect(-11, 7, 7, 5);
+          // Small front wheels
+          ctx.fillRect(11, -6, 4, 3);
+          ctx.fillRect(11, 3, 4, 3);
           ctx.restore();
         }
 
