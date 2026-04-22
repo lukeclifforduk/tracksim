@@ -294,14 +294,15 @@
   }
   let harvester = null;
   // ─────────────────────────────────────────────────────────────────────
-  // TRACTOR — now follows exact same serpentine logic as Harvester
+  // TRACTOR — now uses asphalt parking bay next to windmill as home
   // ─────────────────────────────────────────────────────────────────────
   class Tractor {
     constructor() {
       this.state = 'PARKED';
-      this.x = FARM_OUTER_X + FARM_BLOCK_SIZE * 1.5;
-      this.y = FARM_OUTER_Y + FARM_OUTER_H + FARM_BLOCK_SIZE * 0.5;
-      this.angle = 0;
+      // Asphalt parking bay home position (rear facing windmill = facing left)
+      this.x = 1078;
+      this.y = 80;
+      this.angle = Math.PI;
       this.trailerCapacity = 10;
       this.loaded = 0;
       this.speed = 48;
@@ -401,13 +402,14 @@
   let tractor = null;
 
   // ─────────────────────────────────────────────────────────────────────
-  // WINDMILL SYSTEM - right side of base now perfectly aligned with farm dirt track right edge (x=1182)
+  // WINDMILL SYSTEM - right side of base aligned with farm dirt track right edge
   // ─────────────────────────────────────────────────────────────────────
-  const WINDMILL_HUB_X = 1161;
-  const WINDMILL_HUB_Y = 39;
-  const WINDMILL_TOWER_X = WINDMILL_HUB_X - 17;
-  const WINDMILL_TOWER_Y = WINDMILL_HUB_Y + 5;
+  const WINDMILL_TOWER_RIGHT_X = 1182;
   const WINDMILL_TOWER_WIDTH = 34;
+  const WINDMILL_TOWER_X = WINDMILL_TOWER_RIGHT_X - WINDMILL_TOWER_WIDTH;
+  const WINDMILL_HUB_X = WINDMILL_TOWER_X + 17;
+  const WINDMILL_HUB_Y = 39;
+  const WINDMILL_TOWER_Y = WINDMILL_HUB_Y + 5;
   const WINDMILL_TOWER_HEIGHT = 52;
   let windmillSailAngle = 0;
   const WINDMILL_SAIL_SPEED = 2.8;
@@ -418,6 +420,14 @@
   const MILLSTONE_Y = WINDMILL_TOWER_Y + 23;
   const WINDMILL_SAIL_LENGTH = 44;
   const WINDMILL_SAIL_WIDTH = 5.5;
+
+  // ─────────────────────────────────────────────────────────────────────
+  // ASPHALT PARKING BAY (kept - tractor now uses this as home)
+  // ─────────────────────────────────────────────────────────────────────
+  const ASPHALT_X = 1052;
+  const ASPHALT_Y = 72;
+  const ASPHALT_W = 78;
+  const ASPHALT_H = 28;
 
   function getTopStorageSlotPosition(index) {
     return {
@@ -1425,6 +1435,27 @@
         const FARM_OUTER_Y = FARM_SOIL_Y - FARM_GRASS_BORDER;
         const FARM_OUTER_W = FARM_SOIL_COLS * FARM_BLOCK_SIZE + 2 * FARM_GRASS_BORDER;
         const FARM_OUTER_H = FARM_SOIL_ROWS * FARM_BLOCK_SIZE + 2 * FARM_GRASS_BORDER;
+        function drawTrackBlock(x, y) {
+          const TRACK_MAIN = '#C9A87A';
+          const TRACK_SPECKLE_DARK = '#8B7355';
+          const TRACK_SPECKLE_LIGHT = '#D8C8A0';
+          ctx.fillStyle = TRACK_MAIN;
+          ctx.fillRect(x, y, 18, 18);
+          ctx.fillStyle = TRACK_SPECKLE_DARK;
+          ctx.fillRect(x + 3, y + 5, 2, 2);
+          ctx.fillRect(x + 10, y + 9, 2, 2);
+          ctx.fillRect(x + 5, y + 13, 2, 2);
+          ctx.fillRect(x + 14, y + 4, 2, 2);
+          ctx.fillRect(x + 7, y + 2, 2, 2);
+          ctx.fillStyle = TRACK_SPECKLE_LIGHT;
+          ctx.fillRect(x + 4, y + 8, 2, 2);
+          ctx.fillRect(x + 12, y + 11, 2, 2);
+          ctx.fillRect(x + 2, y + 14, 2, 2);
+          ctx.fillRect(x + 9, y + 3, 2, 2);
+          ctx.strokeStyle = '#C8B89A';
+          ctx.lineWidth = 0.5;
+          ctx.strokeRect(x + 1, y + 1, 16, 16);
+        }
         function drawWheatCell(cell) {
           const bx = cell.x;
           const by = cell.y;
@@ -1492,42 +1523,33 @@
           const fy = FARM_OUTER_Y;
           const fw = FARM_OUTER_W;
           const fh = FARM_OUTER_H;
-          const TRACK_BLOCK_SIZE = 18;
-          const TRACK_MAIN = '#C9A87A';
-          const TRACK_SPECKLE_DARK = '#8B7355';
-          const TRACK_SPECKLE_LIGHT = '#D8C8A0';
-          function drawTrackBlock(x, y) {
-            ctx.fillStyle = TRACK_MAIN;
-            ctx.fillRect(x, y, TRACK_BLOCK_SIZE, TRACK_BLOCK_SIZE);
-            ctx.fillStyle = TRACK_SPECKLE_DARK;
-            ctx.fillRect(x + 3, y + 5, 2, 2);
-            ctx.fillRect(x + 10, y + 9, 2, 2);
-            ctx.fillRect(x + 5, y + 13, 2, 2);
-            ctx.fillRect(x + 14, y + 4, 2, 2);
-            ctx.fillRect(x + 7, y + 2, 2, 2);
-            ctx.fillStyle = TRACK_SPECKLE_LIGHT;
-            ctx.fillRect(x + 4, y + 8, 2, 2);
-            ctx.fillRect(x + 12, y + 11, 2, 2);
-            ctx.fillRect(x + 2, y + 14, 2, 2);
-            ctx.fillRect(x + 9, y + 3, 2, 2);
-            ctx.strokeStyle = '#C8B89A';
-            ctx.lineWidth = 0.5;
-            ctx.strokeRect(x + 1, y + 1, TRACK_BLOCK_SIZE - 2, TRACK_BLOCK_SIZE - 2);
-          }
-          ctx.fillStyle = TRACK_MAIN;
-          ctx.fillRect(fx, fy, TRACK_BLOCK_SIZE, fh);
-          ctx.fillRect(fx + fw - TRACK_BLOCK_SIZE, fy, TRACK_BLOCK_SIZE, fh);
-          ctx.fillRect(fx, fy, fw, TRACK_BLOCK_SIZE);
-          ctx.fillRect(fx, fy + fh - TRACK_BLOCK_SIZE, fw, TRACK_BLOCK_SIZE);
-          for (let y = fy; y < fy + fh; y += TRACK_BLOCK_SIZE) drawTrackBlock(fx, y);
-          for (let y = fy; y < fy + fh; y += TRACK_BLOCK_SIZE) drawTrackBlock(fx + fw - TRACK_BLOCK_SIZE, y);
-          for (let x = fx + TRACK_BLOCK_SIZE; x < fx + fw - TRACK_BLOCK_SIZE; x += TRACK_BLOCK_SIZE) drawTrackBlock(x, fy);
-          for (let x = fx + TRACK_BLOCK_SIZE; x < fx + fw - TRACK_BLOCK_SIZE; x += TRACK_BLOCK_SIZE) drawTrackBlock(x, fy + fh - TRACK_BLOCK_SIZE);
+          ctx.fillStyle = '#C9A87A';
+          ctx.fillRect(fx, fy, 18, fh);
+          ctx.fillRect(fx + fw - 18, fy, 18, fh);
+          ctx.fillRect(fx, fy, fw, 18);
+          ctx.fillRect(fx, fy + fh - 18, fw, 18);
+          for (let y = fy; y < fy + fh; y += 18) drawTrackBlock(fx, y);
+          for (let y = fy; y < fy + fh; y += 18) drawTrackBlock(fx + fw - 18, y);
+          for (let x = fx + 18; x < fx + fw - 18; x += 18) drawTrackBlock(x, fy);
+          for (let x = fx + 18; x < fx + fw - 18; x += 18) drawTrackBlock(x, fy + fh - 18);
           if (sim && sim.farmCells) {
             for (const cell of sim.farmCells) {
               drawWheatCell(cell);
             }
           }
+        }
+        function drawAsphaltParkingBay() {
+          const ASPHALT_X = 1052;
+          const ASPHALT_Y = 72;
+          const ASPHALT_W = 78;
+          const ASPHALT_H = 28;
+          ctx.fillStyle = COLORS.parkingAsphalt;
+          ctx.fillRect(ASPHALT_X, ASPHALT_Y, ASPHALT_W, ASPHALT_H);
+          ctx.strokeStyle = COLORS.parkingLine;
+          ctx.lineWidth = 2;
+          ctx.setLineDash([8, 8]);
+          ctx.strokeRect(ASPHALT_X + 4, ASPHALT_Y + 4, ASPHALT_W - 8, ASPHALT_H - 8);
+          ctx.setLineDash([]);
         }
         function drawStorage(sx, sy, count) {
             ctx.strokeStyle = '#ffffff';
@@ -1847,23 +1869,18 @@
           const g = sim.windmillGeometry;
           const sailAngle = sim.windmillSailAngle;
           const mAngle = sim.millstoneAngle;
-          // Wider tower body (no windows)
           ctx.fillStyle = '#d2b48c';
           ctx.fillRect(g.towerX, g.towerY, g.towerWidth, g.towerHeight);
           ctx.strokeStyle = '#8b5a2b';
           ctx.lineWidth = 2.5;
           ctx.strokeRect(g.towerX, g.towerY, g.towerWidth, g.towerHeight);
-          // Wider base (height reduced 50%)
           ctx.fillStyle = '#c9a37f';
           ctx.fillRect(g.towerX - 4, g.towerY + g.towerHeight - 6, g.towerWidth + 8, 6);
           ctx.strokeRect(g.towerX - 4, g.towerY + g.towerHeight - 6, g.towerWidth + 8, 6);
-          // Roof / cap
           ctx.fillStyle = '#a0522d';
           ctx.fillRect(g.towerX - 3, g.towerY - 7, g.towerWidth + 6, 11);
-          // Central mast
           ctx.fillStyle = '#333';
           ctx.fillRect(g.hubX - 1.5, g.hubY - 4, 3, 14);
-          // Spinning sails
           ctx.save();
           ctx.translate(g.hubX, g.hubY);
           ctx.rotate(sailAngle);
@@ -1876,7 +1893,6 @@
             ctx.fillRect(-halfLen + 3, -g.sailWidth / 2 + 1, g.sailLength - 6, g.sailWidth - 2);
           }
           ctx.restore();
-          // Bigger, more visible rotating millstone
           ctx.save();
           ctx.translate(g.millstoneX, g.millstoneY);
           ctx.rotate(mAngle);
@@ -1937,6 +1953,7 @@
             ctx.fillStyle = COLORS.grass;
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
             drawFarmPatch();
+            drawAsphaltParkingBay();
             drawRoads();
             drawQuarryBlocks();
             drawStations();
