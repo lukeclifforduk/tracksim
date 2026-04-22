@@ -294,15 +294,19 @@
   }
   let harvester = null;
   // ─────────────────────────────────────────────────────────────────────
-  // TRACTOR — now uses asphalt parking bay next to windmill as home
+  // TRACTOR — perfectly centered asphalt parking bay + return-to-home when full
   // ─────────────────────────────────────────────────────────────────────
+  const ASPHALT_CENTER_X = 1052 + 39;
+  const ASPHALT_CENTER_Y = 72 + 14;
   class Tractor {
     constructor() {
       this.state = 'PARKED';
-      // Asphalt parking bay home position (rear facing windmill = facing left)
-      this.x = 1078;
-      this.y = 80;
-      this.angle = Math.PI;
+      this.homeX = ASPHALT_CENTER_X;
+      this.homeY = ASPHALT_CENTER_Y;
+      this.homeAngle = Math.PI;
+      this.x = this.homeX;
+      this.y = this.homeY;
+      this.angle = this.homeAngle;
       this.trailerCapacity = 10;
       this.loaded = 0;
       this.speed = 48;
@@ -381,9 +385,7 @@
           this.targetCell.reserved = false;
           this.targetCell = null;
           if (this.loaded >= this.trailerCapacity) {
-            this.state = 'PARKED';
-            this.path = [];
-            this.pathIndex = 0;
+            this.state = 'RETURNING_TO_HOME';
           } else {
             this.pathIndex++;
             if (this.pathIndex < this.path.length) {
@@ -397,12 +399,30 @@
           }
         }
       }
+      else if (this.state === 'RETURNING_TO_HOME') {
+        const dx = this.homeX - this.x;
+        const dy = this.homeY - this.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 8) {
+          this.x = this.homeX;
+          this.y = this.homeY;
+          this.angle = this.homeAngle;
+          this.state = 'PARKED';
+          this.loaded = 0;
+          this.parkedTime = 0;
+        } else {
+          this.angle = Math.atan2(dy, dx);
+          const moveDist = Math.min(this.speed * dt, dist);
+          this.x += Math.cos(this.angle) * moveDist;
+          this.y += Math.sin(this.angle) * moveDist;
+        }
+      }
     }
   }
   let tractor = null;
 
   // ─────────────────────────────────────────────────────────────────────
-  // WINDMILL SYSTEM - right side of base aligned with farm dirt track right edge
+  // WINDMILL SYSTEM
   // ─────────────────────────────────────────────────────────────────────
   const WINDMILL_TOWER_RIGHT_X = 1182;
   const WINDMILL_TOWER_WIDTH = 34;
@@ -422,7 +442,7 @@
   const WINDMILL_SAIL_WIDTH = 5.5;
 
   // ─────────────────────────────────────────────────────────────────────
-  // ASPHALT PARKING BAY (kept - tractor now uses this as home)
+  // ASPHALT PARKING BAY
   // ─────────────────────────────────────────────────────────────────────
   const ASPHALT_X = 1052;
   const ASPHALT_Y = 72;
@@ -675,18 +695,8 @@
             this.parkedTime = 0;
             const useShortcut = Math.random() < 0.5;
             this.route = useShortcut
-              ? [ {x: rc.rightColX, y: rc.row4Y},
-                  {x: rc.leftColX, y: rc.row4Y},
-                  {x: rc.leftColX, y: rc.midY},
-                  {x: rc.rightColX, y: rc.midY},
-                  {x: rc.rightColX, y: rc.row4Y},
-                  {x: this.parkX, y: this.parkY} ]
-              : [ {x: rc.rightColX, y: rc.row4Y},
-                  {x: rc.leftColX, y: rc.row4Y},
-                  {x: rc.leftColX, y: rc.row14Y},
-                  {x: rc.rightColX, y: rc.row14Y},
-                  {x: rc.rightColX, y: rc.row4Y},
-                  {x: this.parkX, y: this.parkY} ];
+              ? [ {x: rc.rightColX, y: rc.row4Y},{x: rc.leftColX, y: rc.row4Y},{x: rc.leftColX, y: rc.midY},{x: rc.rightColX, y: rc.midY},{x: rc.rightColX, y: rc.row4Y},{x: this.parkX, y: this.parkY} ]
+              : [ {x: rc.rightColX, y: rc.row4Y},{x: rc.leftColX, y: rc.row4Y},{x: rc.leftColX, y: rc.row14Y},{x: rc.rightColX, y: rc.row14Y},{x: rc.rightColX, y: rc.row4Y},{x: this.parkX, y: this.parkY} ];
             this.routeIndex = 0;
             this.targetX = this.route[0].x;
             this.targetY = this.route[0].y;
@@ -694,8 +704,7 @@
           break;
         case 'DRIVING':
           if (this.moveToTarget(dt)) {
-            if (cfg.truckWantsBlockOp(this) && this.safetyNetTarget &&
-                this.routeIndex === this.safetyNetTriggerIndex) {
+            if (cfg.truckWantsBlockOp(this) && this.safetyNetTarget && this.routeIndex === this.safetyNetTriggerIndex) {
               if (cfg.safetyNetIsDeposit) {
                 this.depositTarget = this.safetyNetTarget;
               } else {
@@ -1539,16 +1548,12 @@
           }
         }
         function drawAsphaltParkingBay() {
-          const ASPHALT_X = 1052;
-          const ASPHALT_Y = 72;
-          const ASPHALT_W = 78;
-          const ASPHALT_H = 28;
           ctx.fillStyle = COLORS.parkingAsphalt;
-          ctx.fillRect(ASPHALT_X, ASPHALT_Y, ASPHALT_W, ASPHALT_H);
+          ctx.fillRect(1052, 72, 78, 28);
           ctx.strokeStyle = COLORS.parkingLine;
           ctx.lineWidth = 2;
           ctx.setLineDash([8, 8]);
-          ctx.strokeRect(ASPHALT_X + 4, ASPHALT_Y + 4, ASPHALT_W - 8, ASPHALT_H - 8);
+          ctx.strokeRect(1056, 76, 70, 20);
           ctx.setLineDash([]);
         }
         function drawStorage(sx, sy, count) {
