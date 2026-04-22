@@ -308,7 +308,7 @@
   const CONVEYOR_VERT_END_Y = 53;
   const CONVEYOR_VERT_LENGTH = CONVEYOR_HORIZ_START_Y - CONVEYOR_VERT_END_Y;
   const CONVEYOR_TOP_HORIZ_Y = CONVEYOR_VERT_END_Y;
-  const CONVEYOR_TOP_HORIZ_LENGTH = 115; // leftward exit past windmill tower
+  const CONVEYOR_TOP_HORIZ_LENGTH = 38;           // ← now exactly matches the first horizontal
   const CONVEYOR_TOP_HORIZ_START_X = CONVEYOR_BEND_X;
   const CONVEYOR_TOP_HORIZ_END_X = CONVEYOR_TOP_HORIZ_START_X - CONVEYOR_TOP_HORIZ_LENGTH;
   const CONVEYOR_TOTAL_LENGTH = CONVEYOR_HORIZ_LENGTH + CONVEYOR_VERT_LENGTH + CONVEYOR_TOP_HORIZ_LENGTH;
@@ -481,7 +481,7 @@
   let windmillSailAngle = 0;
   const WINDMILL_SAIL_SPEED = 2.8;
   let millstoneAngle = 0;
-  const MILLSTONE_SPEED = 4.5;
+  const MILLSTONE_SPEED = 2.0;                    // slowed down to better match sails
   const MILLSTONE_RADIUS = 11;
   const MILLSTONE_X = WINDMILL_HUB_X;
   const MILLSTONE_Y = WINDMILL_TOWER_Y + 23;
@@ -2110,8 +2110,9 @@
             ctx.save();
             ctx.translate(pos.x, pos.y);
             ctx.rotate(pos.angle || 0);
-            const isUnderMillstone = (d > cg.HORIZ_LENGTH + cg.VERT_LENGTH - 18 && d < cg.HORIZ_LENGTH + cg.VERT_LENGTH + 12);
-            if (isUnderMillstone) {
+            // All blocks after the vertical section (i.e. on the exit conveyor) are flour
+            const isFlour = d > cg.HORIZ_LENGTH + cg.VERT_LENGTH;
+            if (isFlour) {
               ctx.fillStyle = '#f8f8f8';
               ctx.fillRect(-3, -4, 6, 8);
               ctx.fillStyle = '#e0e0e0';
@@ -2185,7 +2186,7 @@
             drawWindmillTower();               // windmill tower/base FIRST
             drawConveyorHorizontal();          // horizontal conveyor ON TOP of tower
             drawConveyorVerticalAndCorner();   // vertical + corner ON TOP of tower
-            drawConveyorTopHorizontal();       // new top-left horizontal ON TOP of tower
+            drawConveyorTopHorizontal();       // top exit horizontal ON TOP of tower
             drawConveyorBlocks();              // all blocks ON TOP of tower
             drawWindmillTop();                 // millstone + sails LAST
             requestAnimationFrame(animate);
