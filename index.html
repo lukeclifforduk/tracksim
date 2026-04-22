@@ -299,7 +299,7 @@
   const ASPHALT_CENTER_X = 1067;
   const ASPHALT_CENTER_Y = 72 + 14;
   // ─────────────────────────────────────────────────────────────────────
-  // CONVEYOR BELT SYSTEM — windmill loading bay to millstone
+  // CONVEYOR BELT SYSTEM — U-shaped route through windmill (wheat → flour)
   // ─────────────────────────────────────────────────────────────────────
   const CONVEYOR_HORIZ_START_X = 1130;
   const CONVEYOR_HORIZ_START_Y = 86;
@@ -307,17 +307,25 @@
   const CONVEYOR_BEND_X = CONVEYOR_HORIZ_START_X + CONVEYOR_HORIZ_LENGTH;
   const CONVEYOR_VERT_END_Y = 53;
   const CONVEYOR_VERT_LENGTH = CONVEYOR_HORIZ_START_Y - CONVEYOR_VERT_END_Y;
-  const CONVEYOR_TOTAL_LENGTH = CONVEYOR_HORIZ_LENGTH + CONVEYOR_VERT_LENGTH;
+  const CONVEYOR_TOP_HORIZ_Y = CONVEYOR_VERT_END_Y;
+  const CONVEYOR_TOP_HORIZ_LENGTH = 115; // leftward exit past windmill tower
+  const CONVEYOR_TOP_HORIZ_START_X = CONVEYOR_BEND_X;
+  const CONVEYOR_TOP_HORIZ_END_X = CONVEYOR_TOP_HORIZ_START_X - CONVEYOR_TOP_HORIZ_LENGTH;
+  const CONVEYOR_TOTAL_LENGTH = CONVEYOR_HORIZ_LENGTH + CONVEYOR_VERT_LENGTH + CONVEYOR_TOP_HORIZ_LENGTH;
   const CONVEYOR_SPEED = 52.5;
   const CONVEYOR_BELT_WIDTH = 10;
   let conveyorBlocks = [];
   let conveyorBeltOffset = 0;
   function getConveyorPosition(dist) {
-    if (dist < CONVEYOR_HORIZ_LENGTH) {
-      return { x: CONVEYOR_HORIZ_START_X + dist, y: CONVEYOR_HORIZ_START_Y, angle: 0 };
-    } else {
-      const vdist = dist - CONVEYOR_HORIZ_LENGTH;
+    let d = Math.max(0, dist);
+    if (d < CONVEYOR_HORIZ_LENGTH) {
+      return { x: CONVEYOR_HORIZ_START_X + d, y: CONVEYOR_HORIZ_START_Y, angle: 0 };
+    } else if (d < CONVEYOR_HORIZ_LENGTH + CONVEYOR_VERT_LENGTH) {
+      const vdist = d - CONVEYOR_HORIZ_LENGTH;
       return { x: CONVEYOR_BEND_X, y: CONVEYOR_HORIZ_START_Y - vdist, angle: -Math.PI / 2 };
+    } else {
+      const hdist = d - (CONVEYOR_HORIZ_LENGTH + CONVEYOR_VERT_LENGTH);
+      return { x: CONVEYOR_TOP_HORIZ_START_X - hdist, y: CONVEYOR_TOP_HORIZ_Y, angle: Math.PI };
     }
   }
   function updateConveyor(dt) {
@@ -1433,6 +1441,10 @@
       BEND_X: CONVEYOR_BEND_X,
       VERT_END_Y: CONVEYOR_VERT_END_Y,
       VERT_LENGTH: CONVEYOR_VERT_LENGTH,
+      TOP_HORIZ_Y: CONVEYOR_TOP_HORIZ_Y,
+      TOP_HORIZ_LENGTH: CONVEYOR_TOP_HORIZ_LENGTH,
+      TOP_HORIZ_START_X: CONVEYOR_TOP_HORIZ_START_X,
+      TOP_HORIZ_END_X: CONVEYOR_TOP_HORIZ_END_X,
       TOTAL_LENGTH: CONVEYOR_TOTAL_LENGTH,
       BELT_WIDTH: CONVEYOR_BELT_WIDTH,
       SPEED: CONVEYOR_SPEED
@@ -1930,20 +1942,16 @@
         }
         function drawWindmillTower() {
           const g = sim.windmillGeometry;
-          // Tower
           ctx.fillStyle = '#d2b48c';
           ctx.fillRect(g.towerX, g.towerY, g.towerWidth, g.towerHeight);
           ctx.strokeStyle = '#8b5a2b';
           ctx.lineWidth = 2.5;
           ctx.strokeRect(g.towerX, g.towerY, g.towerWidth, g.towerHeight);
-          // Base
           ctx.fillStyle = '#c9a37f';
           ctx.fillRect(g.towerX - 4, g.towerY + g.towerHeight - 6, g.towerWidth + 8, 6);
           ctx.strokeRect(g.towerX - 4, g.towerY + g.towerHeight - 6, g.towerWidth + 8, 6);
-          // Tower top cap
           ctx.fillStyle = '#a0522d';
           ctx.fillRect(g.towerX - 3, g.towerY - 7, g.towerWidth + 6, 11);
-          // Hub vertical post (part of tower)
           ctx.fillStyle = '#333';
           ctx.fillRect(g.hubX - 1.5, g.hubY - 4, 3, 14);
         }
@@ -1951,7 +1959,7 @@
           const g = sim.windmillGeometry;
           const sailAngle = sim.windmillSailAngle;
           const mAngle = sim.millstoneAngle;
-          // === MILLSTONE ===
+          // Millstone
           ctx.save();
           ctx.translate(g.millstoneX, g.millstoneY);
           ctx.rotate(mAngle);
@@ -1983,7 +1991,7 @@
           ctx.arc(0, 0, 2.8, 0, Math.PI * 2);
           ctx.fill();
           ctx.restore();
-          // === SAILS ===
+          // Sails
           ctx.save();
           ctx.translate(g.hubX, g.hubY);
           ctx.rotate(sailAngle);
@@ -2002,17 +2010,11 @@
           const beltOffset = sim.conveyorBeltOffset;
           const bw = cg.BELT_WIDTH;
           const half = bw / 2;
-
-          // Horizontal belt
           ctx.fillStyle = '#4a4a4a';
           ctx.fillRect(cg.HORIZ_START_X - 2, cg.HORIZ_START_Y - half, cg.HORIZ_LENGTH + 4, bw);
-
-          // Dark grey thinner border
           ctx.strokeStyle = '#333333';
           ctx.lineWidth = 2;
           ctx.strokeRect(cg.HORIZ_START_X - 2, cg.HORIZ_START_Y - half, cg.HORIZ_LENGTH + 4, bw);
-
-          // Animated belt texture (clipped)
           ctx.strokeStyle = '#aaaaaa';
           ctx.lineWidth = 2;
           const spacing = 26;
@@ -2029,17 +2031,13 @@
           }
           ctx.restore();
         }
-        function drawConveyorVerticalAndBlocks() {
+        function drawConveyorVerticalAndCorner() {
           const cg = sim.conveyorGeometry;
           const beltOffset = sim.conveyorBeltOffset;
           const bw = cg.BELT_WIDTH;
           const half = bw / 2;
-
-          // Vertical belt
           ctx.fillStyle = '#4a4a4a';
           ctx.fillRect(cg.BEND_X - half, cg.VERT_END_Y - 2, bw, cg.HORIZ_START_Y - cg.VERT_END_Y + 4);
-
-          // Curved corner
           ctx.save();
           ctx.translate(cg.BEND_X, cg.HORIZ_START_Y);
           ctx.rotate(Math.PI);
@@ -2051,8 +2049,6 @@
           ctx.closePath();
           ctx.fill();
           ctx.restore();
-
-          // Dark grey thinner borders
           ctx.strokeStyle = '#333333';
           ctx.lineWidth = 2;
           ctx.strokeRect(cg.BEND_X - half, cg.VERT_END_Y - 2, bw, cg.HORIZ_START_Y - cg.VERT_END_Y + 4);
@@ -2063,8 +2059,6 @@
           ctx.arc(0, 0, half + 2, 0, Math.PI / 2);
           ctx.stroke();
           ctx.restore();
-
-          // Vertical belt texture (clipped)
           ctx.strokeStyle = '#aaaaaa';
           ctx.lineWidth = 2;
           const spacing = 26;
@@ -2080,8 +2074,35 @@
             ctx.stroke();
           }
           ctx.restore();
-
-          // Wheat / flour blocks
+        }
+        function drawConveyorTopHorizontal() {
+          const cg = sim.conveyorGeometry;
+          const beltOffset = sim.conveyorBeltOffset;
+          const bw = cg.BELT_WIDTH;
+          const half = bw / 2;
+          ctx.fillStyle = '#4a4a4a';
+          ctx.fillRect(cg.TOP_HORIZ_END_X - 2, cg.TOP_HORIZ_Y - half, cg.TOP_HORIZ_LENGTH + 4, bw);
+          ctx.strokeStyle = '#333333';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(cg.TOP_HORIZ_END_X - 2, cg.TOP_HORIZ_Y - half, cg.TOP_HORIZ_LENGTH + 4, bw);
+          ctx.strokeStyle = '#aaaaaa';
+          ctx.lineWidth = 2;
+          const spacing = 26;
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(cg.TOP_HORIZ_END_X, cg.TOP_HORIZ_Y - half + 1, cg.TOP_HORIZ_LENGTH, bw - 2);
+          ctx.clip();
+          for (let d = beltOffset % spacing - spacing; d < cg.TOP_HORIZ_LENGTH + spacing; d += spacing) {
+            const x = cg.TOP_HORIZ_START_X - d;
+            ctx.beginPath();
+            ctx.moveTo(x, cg.TOP_HORIZ_Y - half + 3);
+            ctx.lineTo(x, cg.TOP_HORIZ_Y + half - 3);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+        function drawConveyorBlocks() {
+          const cg = sim.conveyorGeometry;
           for (const cb of sim.conveyorBlocks) {
             let d = cb.dist;
             if (d < 0) d = 0;
@@ -2089,18 +2110,13 @@
             ctx.save();
             ctx.translate(pos.x, pos.y);
             ctx.rotate(pos.angle || 0);
-
-            // Detect if block is directly under the millstone
-            const isUnderMillstone = (d > cg.HORIZ_LENGTH + cg.VERT_LENGTH - 18);
-
+            const isUnderMillstone = (d > cg.HORIZ_LENGTH + cg.VERT_LENGTH - 18 && d < cg.HORIZ_LENGTH + cg.VERT_LENGTH + 12);
             if (isUnderMillstone) {
-              // 6×8 white flour bag
               ctx.fillStyle = '#f8f8f8';
               ctx.fillRect(-3, -4, 6, 8);
               ctx.fillStyle = '#e0e0e0';
               ctx.fillRect(-2.5, -3.5, 5, 7);
             } else {
-              // 7×8 yellow wheat block
               ctx.fillStyle = '#e8d050';
               ctx.fillRect(-3.5, -4, 7, 8);
               ctx.fillStyle = '#d4ac0d';
@@ -2166,10 +2182,12 @@
             for (const c of sim.cranes) drawCraneCross(c.hookX, c.hookY, 0.36);
             drawHarvester(sim.harvester);
             drawTractor(sim.tractor);
-            drawConveyor();                    // horizontal part early
-            drawWindmillTower();               // windmill tower/base first
-            drawConveyorVerticalAndBlocks();   // upward conveyor + blocks ABOVE tower but BELOW millstone/sails
-            drawWindmillTop();                 // millstone + sails on top of everything
+            drawWindmillTower();               // windmill tower/base FIRST
+            drawConveyorHorizontal();          // horizontal conveyor ON TOP of tower
+            drawConveyorVerticalAndCorner();   // vertical + corner ON TOP of tower
+            drawConveyorTopHorizontal();       // new top-left horizontal ON TOP of tower
+            drawConveyorBlocks();              // all blocks ON TOP of tower
+            drawWindmillTop();                 // millstone + sails LAST
             requestAnimationFrame(animate);
         }
         sim.initSim();
