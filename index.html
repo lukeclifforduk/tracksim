@@ -420,7 +420,6 @@
     }
   }
   let tractor = null;
-
   // ─────────────────────────────────────────────────────────────────────
   // WINDMILL SYSTEM
   // ─────────────────────────────────────────────────────────────────────
@@ -440,7 +439,6 @@
   const MILLSTONE_Y = WINDMILL_TOWER_Y + 23;
   const WINDMILL_SAIL_LENGTH = 44;
   const WINDMILL_SAIL_WIDTH = 5.5;
-
   // ─────────────────────────────────────────────────────────────────────
   // ASPHALT PARKING BAY
   // ─────────────────────────────────────────────────────────────────────
@@ -448,7 +446,6 @@
   const ASPHALT_Y = 72;
   const ASPHALT_W = 78;
   const ASPHALT_H = 28;
-
   function getTopStorageSlotPosition(index) {
     return {
       x: TOP_STORAGE_X + STORAGE_CELL_MARGIN + (index % STORAGE_COLS) * STORAGE_CELL_STEP + STORAGE_CELL_HALF,
@@ -1433,6 +1430,11 @@
             truckCab: '#e69900', truckTrailer: '#cc5500', truckWindow: '#add8e6',
             forkliftBody: '#ffcc00', forkliftForks: '#bbbbbb',
         };
+
+        // Farm tractor parking bay (next to windmill) — dirt colours ONLY
+        const FARM_PARKING_SURFACE = '#c9b38a';  // light dirt
+        const FARM_PARKING_LINES   = '#8a6f4f';  // darker dirt lines
+
         const FARM_SOIL_COLS = 8;
         const FARM_SOIL_ROWS = 10;
         const FARM_BLOCK_SIZE = 18;
@@ -1548,9 +1550,10 @@
           }
         }
         function drawAsphaltParkingBay() {
-          ctx.fillStyle = COLORS.parkingAsphalt;
+          // ONLY this parking bay (next to windmill) uses dirt colours
+          ctx.fillStyle = FARM_PARKING_SURFACE;
           ctx.fillRect(1052, 72, 78, 28);
-          ctx.strokeStyle = COLORS.parkingLine;
+          ctx.strokeStyle = FARM_PARKING_LINES;
           ctx.lineWidth = 2;
           ctx.setLineDash([8, 8]);
           ctx.strokeRect(1056, 76, 70, 20);
@@ -1874,18 +1877,73 @@
           const g = sim.windmillGeometry;
           const sailAngle = sim.windmillSailAngle;
           const mAngle = sim.millstoneAngle;
+
+          // Tower
           ctx.fillStyle = '#d2b48c';
           ctx.fillRect(g.towerX, g.towerY, g.towerWidth, g.towerHeight);
           ctx.strokeStyle = '#8b5a2b';
           ctx.lineWidth = 2.5;
           ctx.strokeRect(g.towerX, g.towerY, g.towerWidth, g.towerHeight);
+
+          // Base
           ctx.fillStyle = '#c9a37f';
           ctx.fillRect(g.towerX - 4, g.towerY + g.towerHeight - 6, g.towerWidth + 8, 6);
           ctx.strokeRect(g.towerX - 4, g.towerY + g.towerHeight - 6, g.towerWidth + 8, 6);
+
+          // Tower top cap
           ctx.fillStyle = '#a0522d';
           ctx.fillRect(g.towerX - 3, g.towerY - 7, g.towerWidth + 6, 11);
+
+          // === MILLSTONE FIRST (solid stone look with slight rough texture) ===
+          ctx.save();
+          ctx.translate(g.millstoneX, g.millstoneY);
+          ctx.rotate(mAngle);
+          
+          const r = g.millstoneRadius + 1.5;
+          
+          // Outer stone rim
+          ctx.fillStyle = '#9e8f7a';
+          ctx.beginPath();
+          ctx.arc(0, 0, r, 0, Math.PI * 2);
+          ctx.fill();
+          
+          // Main solid stone body
+          ctx.fillStyle = '#b8a98a';
+          ctx.beginPath();
+          ctx.arc(0, 0, r - 3, 0, Math.PI * 2);
+          ctx.fill();
+          
+          // Subtle rough texture (short radial grooves - simple and not fan-like)
+          ctx.strokeStyle = '#8c7a66';
+          ctx.lineWidth = 1.6;
+          for (let i = 0; i < 16; i++) {
+            const ang = i * (Math.PI * 2 / 16);
+            const inner = r - 8;
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(ang) * inner, Math.sin(ang) * inner);
+            ctx.lineTo(Math.cos(ang) * (r - 3.5), Math.sin(ang) * (r - 3.5));
+            ctx.stroke();
+          }
+          
+          // Inner darker ring
+          ctx.fillStyle = '#7f7463';
+          ctx.beginPath();
+          ctx.arc(0, 0, 6.5, 0, Math.PI * 2);
+          ctx.fill();
+          
+          // Center axle
+          ctx.fillStyle = '#3a2f25';
+          ctx.beginPath();
+          ctx.arc(0, 0, 2.8, 0, Math.PI * 2);
+          ctx.fill();
+          
+          ctx.restore();
+
+          // Hub vertical post
           ctx.fillStyle = '#333';
           ctx.fillRect(g.hubX - 1.5, g.hubY - 4, 3, 14);
+
+          // === SAILS LAST (always on top of millstone and tower parts) ===
           ctx.save();
           ctx.translate(g.hubX, g.hubY);
           ctx.rotate(sailAngle);
@@ -1894,33 +1952,9 @@
             ctx.rotate(i * Math.PI / 2);
             ctx.fillStyle = '#f0e0b0';
             ctx.fillRect(-halfLen, -g.sailWidth / 2, g.sailLength, g.sailWidth);
-            ctx.fillStyle = '#c9b37f';
+            ctx.fillStyle = '#d9c89a';
             ctx.fillRect(-halfLen + 3, -g.sailWidth / 2 + 1, g.sailLength - 6, g.sailWidth - 2);
           }
-          ctx.restore();
-          ctx.save();
-          ctx.translate(g.millstoneX, g.millstoneY);
-          ctx.rotate(mAngle);
-          ctx.fillStyle = '#777777';
-          ctx.beginPath();
-          ctx.arc(0, 0, g.millstoneRadius, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = '#555555';
-          ctx.beginPath();
-          ctx.arc(0, 0, g.millstoneRadius - 2.5, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = '#999999';
-          ctx.lineWidth = 1.8;
-          for (let i = 0; i < 8; i++) {
-            ctx.beginPath();
-            ctx.moveTo(0, 0);
-            ctx.lineTo(Math.cos(i * Math.PI / 4) * g.millstoneRadius * 0.82, Math.sin(i * Math.PI / 4) * g.millstoneRadius * 0.82);
-            ctx.stroke();
-          }
-          ctx.fillStyle = '#333333';
-          ctx.beginPath();
-          ctx.arc(0, 0, 2.5, 0, Math.PI * 2);
-          ctx.fill();
           ctx.restore();
         }
         const sim = createSim();
