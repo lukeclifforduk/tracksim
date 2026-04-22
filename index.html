@@ -1928,20 +1928,30 @@
           ctx.fillRect(11, 3, 4, 3);
           ctx.restore();
         }
-        function drawWindmill() {
+        function drawWindmillTower() {
           const g = sim.windmillGeometry;
-          const sailAngle = sim.windmillSailAngle;
-          const mAngle = sim.millstoneAngle;
+          // Tower
           ctx.fillStyle = '#d2b48c';
           ctx.fillRect(g.towerX, g.towerY, g.towerWidth, g.towerHeight);
           ctx.strokeStyle = '#8b5a2b';
           ctx.lineWidth = 2.5;
           ctx.strokeRect(g.towerX, g.towerY, g.towerWidth, g.towerHeight);
+          // Base
           ctx.fillStyle = '#c9a37f';
           ctx.fillRect(g.towerX - 4, g.towerY + g.towerHeight - 6, g.towerWidth + 8, 6);
           ctx.strokeRect(g.towerX - 4, g.towerY + g.towerHeight - 6, g.towerWidth + 8, 6);
+          // Tower top cap
           ctx.fillStyle = '#a0522d';
           ctx.fillRect(g.towerX - 3, g.towerY - 7, g.towerWidth + 6, 11);
+          // Hub vertical post (part of tower)
+          ctx.fillStyle = '#333';
+          ctx.fillRect(g.hubX - 1.5, g.hubY - 4, 3, 14);
+        }
+        function drawWindmillTop() {
+          const g = sim.windmillGeometry;
+          const sailAngle = sim.windmillSailAngle;
+          const mAngle = sim.millstoneAngle;
+          // === MILLSTONE ===
           ctx.save();
           ctx.translate(g.millstoneX, g.millstoneY);
           ctx.rotate(mAngle);
@@ -1973,8 +1983,7 @@
           ctx.arc(0, 0, 2.8, 0, Math.PI * 2);
           ctx.fill();
           ctx.restore();
-          ctx.fillStyle = '#333';
-          ctx.fillRect(g.hubX - 1.5, g.hubY - 4, 3, 14);
+          // === SAILS ===
           ctx.save();
           ctx.translate(g.hubX, g.hubY);
           ctx.rotate(sailAngle);
@@ -2158,8 +2167,9 @@
             drawHarvester(sim.harvester);
             drawTractor(sim.tractor);
             drawConveyor();                    // horizontal part early
-            drawConveyorVerticalAndBlocks();   // upward part + blocks BEFORE windmill
-            drawWindmill();                    // millstone & sails now on top of upward conveyor
+            drawWindmillTower();               // windmill tower/base first
+            drawConveyorVerticalAndBlocks();   // upward conveyor + blocks ABOVE tower but BELOW millstone/sails
+            drawWindmillTop();                 // millstone + sails on top of everything
             requestAnimationFrame(animate);
         }
         sim.initSim();
