@@ -132,7 +132,7 @@
             const TOP_FORKLIFT_HOME_X = STATION_X + STATION_WIDTH - FORKLIFT_HOME_INSET - FORKLIFT_BODY_HALF - FORKLIFT_HOME_INSET;
             const TOP_FORKLIFT_HOME_Y = (TOP_Y - STATION_TOTAL_HEIGHT) + FORKLIFT_HOME_INSET + 19 - 1;
             const BOTTOM_FORKLIFT_HOME_X = STATION_X + FORKLIFT_HOME_INSET + FORKLIFT_BODY_HALF + FORKLIFT_HOME_INSET;
-            const BOTTOM_FORKLIFT_HOME_Y = (BOTTOM_Y + STATION_TOTAL_HEIGHT) - FORKLIFT_HOME_INSET - 19 + 1;
+            const BOTTOM_FORKLIFT_HOME_Y = BOTTOM_Y + BOTTOM_PLATFORM_OFFSET + BOTTOM_PLATFORM_HEIGHT - FORKLIFT_HOME_INSET - 10; // FIXED: very bottom-left corner of grey platform area
             const FORKLIFT_CARRY_LOCAL_X = 12.15;
             const FORKLIFT_CARRY_LOCAL_Y = -1.35;
             const STORAGE_MIDDLE_ROW = 2;
@@ -307,7 +307,7 @@
             const CONVEYOR_HORIZ_START_Y = 86;
             const CONVEYOR_HORIZ_LENGTH = 38;
             const CONVEYOR_BEND_X = CONVEYOR_HORIZ_START_X + CONVEYOR_HORIZ_LENGTH;
-            const CONVEYOR_VERT_END_Y = 53;
+            const CONVEYOR_VERT_END_Y = 39;
             const CONVEYOR_VERT_LENGTH = CONVEYOR_HORIZ_START_Y - CONVEYOR_VERT_END_Y;
             const CONVEYOR_TOP_HORIZ_Y = CONVEYOR_VERT_END_Y;
             const CONVEYOR_TOP_HORIZ_LENGTH = 38;
@@ -318,6 +318,10 @@
             const CONVEYOR_BELT_WIDTH = 10;
             let conveyorBlocks = [];
             let conveyorBeltOffset = 0;
+            let conveyorVisualSpeed = 0;
+            const CONVEYOR_STARTUP_TIME = 0.25;
+            const CONVEYOR_SLOWDOWN_TIME = 1.0;
+            let flourVerticalDirection = 1;
             function getConveyorPosition(dist) {
                 let d = Math.max(0, dist);
                 if (d < CONVEYOR_HORIZ_LENGTH) {
@@ -352,6 +356,7 @@
             function addFlourToStorage() {
                 const row = findNextFillRow();
                 if (row === -1) return;
+                flourVerticalDirection = (row >= 2) ? 1 : -1;
                 if (flourPallets[row][4] < 4) {
                     flourPallets[row][4]++;
                 } else {
@@ -362,7 +367,15 @@
                 }
             }
             function updateConveyor(dt) {
-                conveyorBeltOffset = (conveyorBeltOffset + CONVEYOR_SPEED * dt * 0.7) % 26;
+                const active = conveyorBlocks.length > 0;
+                if (active) {
+                    conveyorVisualSpeed = Math.min(1, conveyorVisualSpeed + dt / CONVEYOR_STARTUP_TIME);
+                } else {
+                    conveyorVisualSpeed = Math.max(0, conveyorVisualSpeed - dt / CONVEYOR_SLOWDOWN_TIME);
+                }
+                if (conveyorVisualSpeed > 0 || active) {
+                    conveyorBeltOffset = (conveyorBeltOffset + CONVEYOR_SPEED * dt * 0.7 * conveyorVisualSpeed) % 26;
+                }
                 for (let i = conveyorBlocks.length - 1; i >= 0; i--) {
                     conveyorBlocks[i].dist += CONVEYOR_SPEED * dt;
                     if (conveyorBlocks[i].dist > CONVEYOR_TOTAL_LENGTH + 8) {
@@ -388,23 +401,20 @@
                     this.speed = 48;
                     this.craneTimer = 0;
                     this.targetCell = null;
-                    this.path = [];
-                    this.pathIndex = 0;
+                    this.collectionColumn = -1;
+                    this.collectionStartRow = -1;
                     this.parkedTime = 0;
                     this.parkTimer = Math.random() * 2 + 1.5;
-                    this.delayActive = false;
-                    this.delayTimer = 0;
-                    this.unloadingTimer = 0;
                 }
                 update(dt) {
                     this.parkedTime += dt;
                     if (this.state === 'PARKED') {
                         if (this.loaded > 0) {
-                            this.unloadingTimer -= dt;
-                            if (this.unloadingTimer <= 0) {
+                            this.craneTimer -= dt;
+                            if (this.craneTimer <= 0) {
                                 conveyorBlocks.push({dist: -12});
                                 this.loaded = Math.max(0, this.loaded - 1);
-                                this.unloadingTimer = 0.48 + Math.random() * 0.15;
+                                this.craneTimer = 0.48 + Math.random() * 0.15;
                             }
                             return;
                         }
@@ -413,21 +423,25 @@
                             return;
                         }
                         this.parkTimer -= dt;
-                        if (hasHarvestedBlocks() && !this.delayActive && firstHarvestedTime !== null) {
-                            this.delayActive = true;
-                            this.delayTimer = 7.0;
-                        }
-                        if (this.delayActive) {
-                            this.delayTimer -= dt;
-                            if (this.delayTimer <= 0) {
-                                this.delayActive = false;
-                                this.path = generateSerpentinePath();
-                                this.pathIndex = 0;
-                                const start = this.path[0];
-                                this.targetCell = farmCells.find(cell => cell.col === start.col && cell.row === start.row);
+                        if (hasHarvestedBlocks() && firstHarvestedTime !== null && this.parkTimer <= 0) {
+                            let nearest = null;
+                            let minDist = Infinity;
+                            for (const cell of farmCells) {
+                                if (cell.state === FARM_CELL_STATES.HARVESTED && !cell.reserved) {
+                                    const d = Math.hypot(cell.centerX - this.x, cell.centerY - this.y);
+                                    if (d < minDist) {
+                                        minDist = d;
+                                        nearest = cell;
+                                    }
+                                }
+                            }
+                            if (nearest) {
+                                this.targetCell = nearest;
+                                this.collectionColumn = nearest.col;
+                                this.collectionStartRow = nearest.row;
                                 this.state = 'MOVING_TO_CELL';
                             }
-                            return;
+                            this.parkTimer = Math.random() * 0.3 + 0.2;
                         }
                         return;
                     }
@@ -447,14 +461,7 @@
                                 this.craneTimer = 1.0;
                                 this.targetCell.reserved = true;
                             } else {
-                                this.pathIndex++;
-                                if (this.pathIndex < this.path.length) {
-                                    const next = this.path[this.pathIndex];
-                                    this.targetCell = farmCells.find(cell => cell.col === next.col && cell.row === next.row);
-                                } else {
-                                    this.state = 'PARKED';
-                                    this.loaded = 0;
-                                }
+                                this.findNextInColumn();
                             }
                         } else {
                             this.angle = Math.atan2(dy, dx);
@@ -470,19 +477,7 @@
                             this.loaded = Math.min(this.trailerCapacity, this.loaded + 1);
                             this.targetCell.reserved = false;
                             this.targetCell = null;
-                            if (this.loaded >= this.trailerCapacity) {
-                                this.state = 'RETURNING_TO_HOME';
-                            } else {
-                                this.pathIndex++;
-                                if (this.pathIndex < this.path.length) {
-                                    const next = this.path[this.pathIndex];
-                                    this.targetCell = farmCells.find(cell => cell.col === next.col && cell.row === next.row);
-                                    this.state = 'MOVING_TO_CELL';
-                                } else {
-                                    this.state = 'PARKED';
-                                    this.loaded = 0;
-                                }
-                            }
+                            this.findNextInColumn();
                         }
                     }
                     else if (this.state === 'RETURNING_TO_HOME') {
@@ -495,6 +490,8 @@
                             this.angle = this.homeAngle;
                             this.state = 'PARKED';
                             this.parkedTime = 0;
+                            this.collectionColumn = -1;
+                            this.collectionStartRow = -1;
                         } else {
                             this.angle = Math.atan2(dy, dx);
                             const moveDist = Math.min(this.speed * dt, dist);
@@ -503,22 +500,44 @@
                         }
                     }
                 }
+                findNextInColumn() {
+                    let next = null;
+                    let minRow = Infinity;
+                    for (const cell of farmCells) {
+                        if (cell.col === this.collectionColumn && 
+                            cell.row > this.collectionStartRow && 
+                            cell.state === FARM_CELL_STATES.HARVESTED && 
+                            !cell.reserved) {
+                            if (cell.row < minRow) {
+                                minRow = cell.row;
+                                next = cell;
+                            }
+                        }
+                    }
+                    if (next) {
+                        this.targetCell = next;
+                        this.collectionStartRow = next.row;
+                        this.state = 'MOVING_TO_CELL';
+                    } else {
+                        this.state = 'RETURNING_TO_HOME';
+                    }
+                }
             }
             let tractor = null;
             const WINDMILL_TOWER_RIGHT_X = 1182;
             const WINDMILL_TOWER_WIDTH = 34;
             const WINDMILL_TOWER_X = WINDMILL_TOWER_RIGHT_X - WINDMILL_TOWER_WIDTH;
             const WINDMILL_HUB_X = WINDMILL_TOWER_X + 17;
-            const WINDMILL_HUB_Y = 39;
-            const WINDMILL_TOWER_Y = WINDMILL_HUB_Y + 5;
-            const WINDMILL_TOWER_HEIGHT = 52;
+            const WINDMILL_HUB_Y = 21;
+            const WINDMILL_TOWER_Y = 26;
+            const WINDMILL_TOWER_HEIGHT = 75;
             let windmillSailAngle = 0;
             const WINDMILL_SAIL_SPEED = 2.8;
             let millstoneAngle = 0;
             const MILLSTONE_SPEED = 2.0;
             const MILLSTONE_RADIUS = 11;
             const MILLSTONE_X = WINDMILL_HUB_X;
-            const MILLSTONE_Y = WINDMILL_TOWER_Y + 23;
+            const MILLSTONE_Y = 58;
             const WINDMILL_SAIL_LENGTH = 44;
             const WINDMILL_SAIL_WIDTH = 5.5;
             const ASPHALT_X = 1052;
@@ -1386,6 +1405,8 @@
                 millstoneAngle = 0;
                 conveyorBlocks = [];
                 conveyorBeltOffset = 0;
+                conveyorVisualSpeed = 0;
+                flourVerticalDirection = 1;
                 initFlourStorage();
             }
             function updateTrain(dt) {
@@ -1435,8 +1456,11 @@
                 if (harvester) harvester.update(dt);
                 if (tractor) tractor.update(dt);
                 updateConveyor(dt);
-                windmillSailAngle = (windmillSailAngle + WINDMILL_SAIL_SPEED * dt) % (2 * Math.PI);
-                millstoneAngle = (millstoneAngle + MILLSTONE_SPEED * dt) % (2 * Math.PI);
+                const conveyorActive = conveyorBlocks.length > 0;
+                if (conveyorActive || conveyorVisualSpeed > 0) {
+                    windmillSailAngle = (windmillSailAngle + WINDMILL_SAIL_SPEED * dt * conveyorVisualSpeed) % (2 * Math.PI);
+                    millstoneAngle = (millstoneAngle + MILLSTONE_SPEED * dt * conveyorVisualSpeed) % (2 * Math.PI);
+                }
             }
             return {
                 step,
@@ -1460,7 +1484,9 @@
                 get millstoneAngle() { return millstoneAngle; },
                 get conveyorBlocks() { return conveyorBlocks; },
                 get conveyorBeltOffset() { return conveyorBeltOffset; },
+                get conveyorVisualSpeed() { return conveyorVisualSpeed; },
                 get flourPallets() { return flourPallets; },
+                get flourVerticalDirection() { return flourVerticalDirection; },
                 getConveyorPosition,
                 updateConveyor,
                 conveyorGeometry: {
@@ -2139,32 +2165,36 @@
             const geom = sim.flourStorageGeometry;
             const rightX = geom.x + geom.border + geom.cols * geom.cellSize + 2;
             const vHeight = geom.rows * geom.cellSize + geom.border * 2;
+            const dir = sim.flourVerticalDirection || 1;
+
             ctx.fillStyle = '#4a4a4a';
             ctx.fillRect(rightX, geom.y, 10, vHeight);
             ctx.strokeStyle = '#333333';
             ctx.lineWidth = 2;
             ctx.strokeRect(rightX, geom.y, 10, vHeight);
+
+            const horizEndX = sim.conveyorGeometry.TOP_HORIZ_END_X;
+            const horizEndY = sim.conveyorGeometry.TOP_HORIZ_Y;
+            ctx.fillStyle = '#4a4a4a';
+            ctx.fillRect(horizEndX - 6, horizEndY - 5, 16, 10);
+            ctx.fillRect(rightX, horizEndY - 5, 10, geom.y - horizEndY + 10);
+
             ctx.strokeStyle = '#aaaaaa';
             ctx.lineWidth = 2;
             const spacing = 26;
-            const beltOffset = sim.conveyorBeltOffset % spacing;
+            const offset = sim.conveyorBeltOffset % spacing;
             ctx.save();
             ctx.beginPath();
             ctx.rect(rightX + 1, geom.y + 1, 8, vHeight - 2);
             ctx.clip();
-            for (let d = beltOffset - spacing; d < vHeight + spacing; d += spacing) {
-                const yPos = geom.y + vHeight - d;
+            for (let d = offset - spacing; d < vHeight + spacing; d += spacing) {
+                const yPos = geom.y + vHeight / 2 + d * dir;
                 ctx.beginPath();
                 ctx.moveTo(rightX + 3, yPos);
                 ctx.lineTo(rightX + 7, yPos);
                 ctx.stroke();
             }
             ctx.restore();
-            const horizEndX = sim.conveyorGeometry.TOP_HORIZ_END_X;
-            const horizEndY = sim.conveyorGeometry.TOP_HORIZ_Y;
-            ctx.fillStyle = '#4a4a4a';
-            ctx.fillRect(horizEndX - 6, horizEndY - 5, 16, 10);
-            ctx.fillRect(rightX, horizEndY - 5, 10, geom.y - horizEndY + 10);
         }
         function drawFlourStorage() {
             const geom = sim.flourStorageGeometry;
@@ -2267,9 +2297,9 @@
             drawConveyorVerticalAndCorner();
             drawConveyorTopHorizontal();
             drawConveyorBlocks();
-            drawFlourVerticalConveyor();
             drawFlourStorage();
             drawWindmillTop();
+            drawFlourVerticalConveyor();
             requestAnimationFrame(animate);
         }
         sim.initSim();
