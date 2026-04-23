@@ -395,7 +395,7 @@
                 for (let i = conveyorBlocks.length - 1; i >= 0; i--) {
                     conveyorBlocks[i].dist += CONVEYOR_SPEED * dt;
                     if (conveyorBlocks[i].dist > CONVEYOR_TOTAL_LENGTH + 8) {
-                        const isFlour = conveyorBlocks[i].dist > (CONVEYOR_HORIZ_LENGTH + CONVEYOR_VERT_LENGTH);
+                        const isFlour = conveyorBlocks[i].dist > (CONVEYOR_HORIZ_LENGTH + CONVEYOR_VERT_LENGTH /2);
                         if (isFlour) {
                             spawnFlourTraveler();
                         }
@@ -2175,7 +2175,7 @@
                 ctx.save();
                 ctx.translate(pos.x, pos.y);
                 ctx.rotate(pos.angle || 0);
-                const isFlour = d > (cg.HORIZ_LENGTH + cg.VERT_LENGTH);
+                const isFlour = d > (cg.HORIZ_LENGTH + cg.VERT_LENGTH / 2);
                 if (isFlour) {
                     ctx.fillStyle = '#f8f8f8';
                     ctx.fillRect(-1, -1.5, 2, 3);
