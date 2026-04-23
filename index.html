@@ -132,7 +132,7 @@
             const TOP_FORKLIFT_HOME_X = STATION_X + STATION_WIDTH - FORKLIFT_HOME_INSET - FORKLIFT_BODY_HALF - FORKLIFT_HOME_INSET;
             const TOP_FORKLIFT_HOME_Y = (TOP_Y - STATION_TOTAL_HEIGHT) + FORKLIFT_HOME_INSET + 19 - 1;
             const BOTTOM_FORKLIFT_HOME_X = STATION_X + FORKLIFT_HOME_INSET + FORKLIFT_BODY_HALF + FORKLIFT_HOME_INSET;
-            const BOTTOM_FORKLIFT_HOME_Y = BOTTOM_Y + BOTTOM_PLATFORM_OFFSET + BOTTOM_PLATFORM_HEIGHT - FORKLIFT_HOME_INSET - 10; // FIXED: very bottom-left corner of grey platform area
+            const BOTTOM_FORKLIFT_HOME_Y = BOTTOM_Y + BOTTOM_PLATFORM_OFFSET + BOTTOM_PLATFORM_HEIGHT - FORKLIFT_HOME_INSET - 10;
             const FORKLIFT_CARRY_LOCAL_X = 12.15;
             const FORKLIFT_CARRY_LOCAL_Y = -1.35;
             const STORAGE_MIDDLE_ROW = 2;
@@ -401,8 +401,8 @@
                     this.speed = 48;
                     this.craneTimer = 0;
                     this.targetCell = null;
-                    this.collectionColumn = -1;
-                    this.collectionStartRow = -1;
+                    this.currentColumn = -1;           // currently processing column (-1 = none)
+                    this.lastCollectedRow = -1;        // last row collected in current column
                     this.parkedTime = 0;
                     this.parkTimer = Math.random() * 2 + 1.5;
                 }
@@ -424,23 +424,7 @@
                         }
                         this.parkTimer -= dt;
                         if (hasHarvestedBlocks() && firstHarvestedTime !== null && this.parkTimer <= 0) {
-                            let nearest = null;
-                            let minDist = Infinity;
-                            for (const cell of farmCells) {
-                                if (cell.state === FARM_CELL_STATES.HARVESTED && !cell.reserved) {
-                                    const d = Math.hypot(cell.centerX - this.x, cell.centerY - this.y);
-                                    if (d < minDist) {
-                                        minDist = d;
-                                        nearest = cell;
-                                    }
-                                }
-                            }
-                            if (nearest) {
-                                this.targetCell = nearest;
-                                this.collectionColumn = nearest.col;
-                                this.collectionStartRow = nearest.row;
-                                this.state = 'MOVING_TO_CELL';
-                            }
+                            this.findNextColumnAndCell();
                             this.parkTimer = Math.random() * 0.3 + 0.2;
                         }
                         return;
@@ -490,8 +474,8 @@
                             this.angle = this.homeAngle;
                             this.state = 'PARKED';
                             this.parkedTime = 0;
-                            this.collectionColumn = -1;
-                            this.collectionStartRow = -1;
+                            this.currentColumn = -1;
+                            this.lastCollectedRow = -1;
                         } else {
                             this.angle = Math.atan2(dy, dx);
                             const moveDist = Math.min(this.speed * dt, dist);
@@ -500,25 +484,42 @@
                         }
                     }
                 }
+                findNextColumnAndCell() {
+                    // Find the left-most column that still has any ready blocks
+                    let bestCol = Infinity;
+                    let bestCell = null;
+                    for (const cell of farmCells) {
+                        if (cell.state === FARM_CELL_STATES.HARVESTED && !cell.reserved && cell.col < bestCol) {
+                            bestCol = cell.col;
+                            bestCell = cell;
+                        }
+                    }
+                    if (bestCell) {
+                        this.currentColumn = bestCell.col;
+                        this.lastCollectedRow = -1; // start from top of column
+                        this.targetCell = bestCell;
+                        this.state = 'MOVING_TO_CELL';
+                    }
+                }
                 findNextInColumn() {
                     let next = null;
                     let minRow = Infinity;
                     for (const cell of farmCells) {
-                        if (cell.col === this.collectionColumn && 
-                            cell.row > this.collectionStartRow && 
-                            cell.state === FARM_CELL_STATES.HARVESTED && 
-                            !cell.reserved) {
-                            if (cell.row < minRow) {
-                                minRow = cell.row;
-                                next = cell;
-                            }
+                        if (cell.col === this.currentColumn &&
+                            cell.row > this.lastCollectedRow &&
+                            cell.state === FARM_CELL_STATES.HARVESTED &&
+                            !cell.reserved &&
+                            cell.row < minRow) {
+                            minRow = cell.row;
+                            next = cell;
                         }
                     }
                     if (next) {
                         this.targetCell = next;
-                        this.collectionStartRow = next.row;
+                        this.lastCollectedRow = next.row;
                         this.state = 'MOVING_TO_CELL';
                     } else {
+                        // Column finished - return to unload
                         this.state = 'RETURNING_TO_HOME';
                     }
                 }
