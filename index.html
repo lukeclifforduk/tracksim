@@ -317,6 +317,7 @@
             const CONVEYOR_SPEED = 30;
             const CONVEYOR_BELT_WIDTH = 10;
             let conveyorBlocks = [];
+            let flourTravelBlocks = [];
             let conveyorBeltOffset = 0;
             let conveyorVisualSpeed = 0;
             const CONVEYOR_STARTUP_TIME = 0.25;
@@ -353,6 +354,21 @@
                 }
                 return -1;
             }
+            function spawnFlourTraveler() {
+                const row = findNextFillRow();
+                if (row === -1) return;
+                flourVerticalDirection = (row >= 2) ? 1 : -1;
+                const gridY = FLOUR_STORAGE_Y + PALLET_BORDER;
+                const targetY = gridY + row * PALLET_CELL_SIZE + PALLET_CELL_SIZE / 2;
+                const rightX = FLOUR_STORAGE_X + PALLET_BORDER + PALLET_GRID_COLS * PALLET_CELL_SIZE + PALLET_BORDER;
+                const entryX = rightX + 5;
+                flourTravelBlocks.push({
+                    currentY: CONVEYOR_TOP_HORIZ_Y,
+                    targetY: targetY,
+                    direction: flourVerticalDirection,
+                    x: entryX
+                });
+            }
             function addFlourToStorage() {
                 const row = findNextFillRow();
                 if (row === -1) return;
@@ -381,9 +397,20 @@
                     if (conveyorBlocks[i].dist > CONVEYOR_TOTAL_LENGTH + 8) {
                         const isFlour = conveyorBlocks[i].dist > (CONVEYOR_HORIZ_LENGTH + CONVEYOR_VERT_LENGTH);
                         if (isFlour) {
-                            addFlourToStorage();
+                            spawnFlourTraveler();
                         }
                         conveyorBlocks.splice(i, 1);
+                    }
+                }
+            }
+            function updateFlourTravelers(dt) {
+                for (let i = flourTravelBlocks.length - 1; i >= 0; i--) {
+                    const b = flourTravelBlocks[i];
+                    b.currentY += b.direction * CONVEYOR_SPEED * 0.85 * dt;
+                    const arrived = (b.direction > 0 && b.currentY >= b.targetY) || (b.direction < 0 && b.currentY <= b.targetY);
+                    if (arrived) {
+                        addFlourToStorage();
+                        flourTravelBlocks.splice(i, 1);
                     }
                 }
             }
@@ -401,8 +428,8 @@
                     this.speed = 48;
                     this.craneTimer = 0;
                     this.targetCell = null;
-                    this.currentColumn = -1;           // currently processing column (-1 = none)
-                    this.lastCollectedRow = -1;        // last row collected in current column
+                    this.currentColumn = -1;
+                    this.lastCollectedRow = -1;
                     this.parkedTime = 0;
                     this.parkTimer = Math.random() * 2 + 1.5;
                 }
@@ -485,7 +512,6 @@
                     }
                 }
                 findNextColumnAndCell() {
-                    // Find the left-most column that still has any ready blocks
                     let bestCol = Infinity;
                     let bestCell = null;
                     for (const cell of farmCells) {
@@ -496,7 +522,7 @@
                     }
                     if (bestCell) {
                         this.currentColumn = bestCell.col;
-                        this.lastCollectedRow = -1; // start from top of column
+                        this.lastCollectedRow = -1;
                         this.targetCell = bestCell;
                         this.state = 'MOVING_TO_CELL';
                     }
@@ -519,7 +545,6 @@
                         this.lastCollectedRow = next.row;
                         this.state = 'MOVING_TO_CELL';
                     } else {
-                        // Column finished - return to unload
                         this.state = 'RETURNING_TO_HOME';
                     }
                 }
@@ -1367,6 +1392,8 @@
                 trucks.length = 0;
                 forklifts.length = 0;
                 cranes.length = 0;
+                conveyorBlocks = [];
+                flourTravelBlocks = [];
                 for (let row = 0; row < QUARRY_MAX_ROWS; row++) {
                     const numCols = TOP_QUARRY_COLS_PER_ROW[row];
                     for (let col = 0; col < numCols; col++) {
@@ -1404,7 +1431,6 @@
                 tractor = new Tractor();
                 windmillSailAngle = 0;
                 millstoneAngle = 0;
-                conveyorBlocks = [];
                 conveyorBeltOffset = 0;
                 conveyorVisualSpeed = 0;
                 flourVerticalDirection = 1;
@@ -1457,6 +1483,7 @@
                 if (harvester) harvester.update(dt);
                 if (tractor) tractor.update(dt);
                 updateConveyor(dt);
+                updateFlourTravelers(dt);
                 const conveyorActive = conveyorBlocks.length > 0;
                 if (conveyorActive || conveyorVisualSpeed > 0) {
                     windmillSailAngle = (windmillSailAngle + WINDMILL_SAIL_SPEED * dt * conveyorVisualSpeed) % (2 * Math.PI);
@@ -1484,6 +1511,7 @@
                 get windmillSailAngle() { return windmillSailAngle; },
                 get millstoneAngle() { return millstoneAngle; },
                 get conveyorBlocks() { return conveyorBlocks; },
+                get flourTravelBlocks() { return flourTravelBlocks; },
                 get conveyorBeltOffset() { return conveyorBeltOffset; },
                 get conveyorVisualSpeed() { return conveyorVisualSpeed; },
                 get flourPallets() { return flourPallets; },
@@ -2162,6 +2190,18 @@
                 ctx.restore();
             }
         }
+        function drawFlourTravelers() {
+            if (!sim.flourTravelBlocks) return;
+            for (const b of sim.flourTravelBlocks) {
+                ctx.save();
+                ctx.translate(b.x, b.currentY);
+                ctx.fillStyle = '#f8f8f8';
+                ctx.fillRect(-1, -1.5, 2, 3);
+                ctx.fillStyle = '#e0e0e0';
+                ctx.fillRect(-0.5, -1, 1, 2);
+                ctx.restore();
+            }
+        }
         function drawFlourVerticalConveyor() {
             const geom = sim.flourStorageGeometry;
             const rightX = geom.x + geom.border + geom.cols * geom.cellSize + 2;
@@ -2299,6 +2339,7 @@
             drawConveyorTopHorizontal();
             drawFlourVerticalConveyor();
             drawConveyorBlocks();
+            drawFlourTravelers();
             drawFlourStorage();
             drawWindmillTop();
             requestAnimationFrame(animate);
