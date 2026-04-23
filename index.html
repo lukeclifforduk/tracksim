@@ -158,7 +158,6 @@
             const FORKLIFT_SPEED = 62;
             const FORKLIFT_WORK_TIME = 0.75;
             const FORKLIFT_LENGTH = 22;
-            // WHEAT FARMING SYSTEM
             const FARM_CELL_STATES = {
                 EMPTY_SOIL: 0,
                 SEEDED: 1,
@@ -302,10 +301,8 @@
                 }
             }
             let harvester = null;
-            // TRACTOR
             const ASPHALT_CENTER_X = 1067;
             const ASPHALT_CENTER_Y = 72 + 14;
-            // CONVEYOR BELT SYSTEM
             const CONVEYOR_HORIZ_START_X = 1130;
             const CONVEYOR_HORIZ_START_Y = 86;
             const CONVEYOR_HORIZ_LENGTH = 38;
@@ -333,9 +330,8 @@
                     return { x: CONVEYOR_TOP_HORIZ_START_X - hdist, y: CONVEYOR_TOP_HORIZ_Y, angle: Math.PI };
                 }
             }
-            // FLOUR STORAGE SYSTEM (moved to top, improved pallets)
-            const FLOUR_STORAGE_X = 1036;
-            const FLOUR_STORAGE_Y = 2;
+            const FLOUR_STORAGE_X = 1042;
+            const FLOUR_STORAGE_Y = -2;
             const PALLET_CELL_SIZE = 16;
             const PALLET_GRID_COLS = 5;
             const PALLET_GRID_ROWS = 4;
@@ -347,22 +343,22 @@
             function isRowFull(rowIdx) {
                 return flourPallets[rowIdx].every(c => c === 4);
             }
-            function findLowestUnfilledRow() {
-                for (let r = 0; r < PALLET_GRID_ROWS; r++) {
+            function findNextFillRow() {
+                for (let r = PALLET_GRID_ROWS - 1; r >= 0; r--) {
                     if (!isRowFull(r)) return r;
                 }
                 return -1;
             }
             function addFlourToStorage() {
-                const row = findLowestUnfilledRow();
+                const row = findNextFillRow();
                 if (row === -1) return;
-                const col = PALLET_GRID_COLS - 1;
-                flourPallets[row][col]++;
-                if (flourPallets[row][col] === 4) {
-                    for (let c = 0; c < PALLET_GRID_COLS - 1; c++) {
+                if (flourPallets[row][4] < 4) {
+                    flourPallets[row][4]++;
+                } else {
+                    for (let c = 0; c < 4; c++) {
                         flourPallets[row][c] = flourPallets[row][c + 1];
                     }
-                    flourPallets[row][PALLET_GRID_COLS - 1] = 0;
+                    flourPallets[row][4] = 1;
                 }
             }
             function updateConveyor(dt) {
@@ -509,7 +505,6 @@
                 }
             }
             let tractor = null;
-            // WINDMILL SYSTEM
             const WINDMILL_TOWER_RIGHT_X = 1182;
             const WINDMILL_TOWER_WIDTH = 34;
             const WINDMILL_TOWER_X = WINDMILL_TOWER_RIGHT_X - WINDMILL_TOWER_WIDTH;
@@ -1529,7 +1524,6 @@
                 }
             };
         }
-        // RENDERING
         const COLORS = {
             grass: '#2e8b57', trackBed: '#654321', rail: '#D3D3D3',
             engineBody: '#1e90ff', engineFront: '#ff4757', engineWheel: '#1c2526',
@@ -1540,8 +1534,6 @@
             truckCab: '#e69900', truckTrailer: '#cc5500', truckWindow: '#add8e6',
             forkliftBody: '#ffcc00', forkliftForks: '#bbbbbb',
         };
-        const FARM_PARKING_SURFACE = '#c9b38a';
-        const FARM_PARKING_LINES = '#8a6f4f';
         function drawTrackBlock(x, y) {
             const TRACK_MAIN = '#C9A87A';
             const TRACK_SPECKLE_DARK = '#8B7355';
@@ -1626,7 +1618,7 @@
             ctx.strokeRect(bx + 1, by + 1, s - 2, s - 2);
         }
         function drawFarmPatch() {
-            const fx = 1200 - 18 - 18 - (8 * 18);
+            const fx = 1200 - 18 - 18 - (8 * 18) - 18;
             const fy = 7 * 18 - 18;
             const fw = 8 * 18 + 2 * 18;
             const fh = 10 * 18 + 2 * 18;
@@ -2128,7 +2120,7 @@
                 ctx.save();
                 ctx.translate(pos.x, pos.y);
                 ctx.rotate(pos.angle || 0);
-                const isFlour = d > cg.HORIZ_LENGTH + cg.VERT_LENGTH;
+                const isFlour = d > (cg.HORIZ_LENGTH + cg.VERT_LENGTH - 25);
                 if (isFlour) {
                     ctx.fillStyle = '#f8f8f8';
                     ctx.fillRect(-1, -1.5, 2, 3);
@@ -2156,13 +2148,18 @@
             ctx.lineWidth = 2;
             const spacing = 26;
             const beltOffset = sim.conveyorBeltOffset % spacing;
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(rightX + 1, geom.y + 1, 8, vHeight - 2);
+            ctx.clip();
             for (let d = beltOffset - spacing; d < vHeight + spacing; d += spacing) {
-                const yPos = geom.y + d;
+                const yPos = geom.y + vHeight - d;
                 ctx.beginPath();
                 ctx.moveTo(rightX + 3, yPos);
                 ctx.lineTo(rightX + 7, yPos);
                 ctx.stroke();
             }
+            ctx.restore();
             const horizEndX = sim.conveyorGeometry.TOP_HORIZ_END_X;
             const horizEndY = sim.conveyorGeometry.TOP_HORIZ_Y;
             ctx.fillStyle = '#4a4a4a';
@@ -2175,9 +2172,8 @@
             const gridY = geom.y + geom.border;
             const gridW = geom.cols * geom.cellSize;
             const gridH = geom.rows * geom.cellSize;
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 4;
-            ctx.strokeRect(geom.x, geom.y, gridW + geom.border * 2, gridH + geom.border * 2);
+            ctx.fillStyle = '#3a2f25';
+            ctx.fillRect(gridX - geom.border, gridY - geom.border, gridW + geom.border * 2, gridH + geom.border * 2);
             ctx.fillStyle = '#3a2f25';
             ctx.fillRect(gridX, gridY, gridW, gridH);
             for (let r = 0; r < geom.rows; r++) {
@@ -2189,7 +2185,7 @@
                     ctx.lineWidth = 2;
                     ctx.strokeRect(px + 1, py + 1, cs - 2, cs - 2);
                     ctx.fillStyle = '#d4b88a';
-                    ctx.fillRect(px + 3, py + 3, cs - 6, cs - 6);
+                    ctx.fillRect(px + 2.5, py + 2.5, cs - 5, cs - 5);
                     ctx.fillStyle = '#b89e70';
                     for (let s = 0; s < 5; s++) {
                         ctx.fillRect(px + 4, py + 4 + s * 2.4, cs - 8, 1);
@@ -2200,7 +2196,7 @@
                     const count = sim.flourPallets[r][c];
                     for (let i = 0; i < count; i++) {
                         const fx = px + 4 + (i % 2) * 6;
-                        const fy = py + 4 + Math.floor(i / 2) * 4;
+                        const fy = py + 4 + Math.floor(i / 2) * 6;
                         ctx.fillStyle = '#f8f8f8';
                         ctx.fillRect(fx, fy, 2, 3);
                         ctx.fillStyle = '#e0e0e0';
