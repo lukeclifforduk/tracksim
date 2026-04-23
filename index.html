@@ -2147,7 +2147,7 @@
                 ctx.save();
                 ctx.translate(pos.x, pos.y);
                 ctx.rotate(pos.angle || 0);
-                const isFlour = d > (cg.HORIZ_LENGTH + cg.VERT_LENGTH - 25);
+                const isFlour = d > (cg.HORIZ_LENGTH + cg.VERT_LENGTH);
                 if (isFlour) {
                     ctx.fillStyle = '#f8f8f8';
                     ctx.fillRect(-1, -1.5, 2, 3);
@@ -2297,10 +2297,10 @@
             drawConveyorHorizontal();
             drawConveyorVerticalAndCorner();
             drawConveyorTopHorizontal();
+            drawFlourVerticalConveyor();
             drawConveyorBlocks();
             drawFlourStorage();
             drawWindmillTop();
-            drawFlourVerticalConveyor();
             requestAnimationFrame(animate);
         }
         sim.initSim();
