@@ -129,9 +129,9 @@
             };
             const FORKLIFT_BODY_HALF = 12;
             const FORKLIFT_HOME_INSET = 2;
-            const TOP_FORKLIFT_HOME_X = STATION_X + STATION_WIDTH - FORKLIFT_HOME_INSET - FORKLIFT_BODY_HALF - FORKLIFT_HOME_INSET;
+            const TOP_FORKLIFT_HOME_X = STATION_X + STATION_WIDTH + 20 - FORKLIFT_HOME_INSET - FORKLIFT_BODY_HALF - FORKLIFT_HOME_INSET;
             const TOP_FORKLIFT_HOME_Y = (TOP_Y - STATION_TOTAL_HEIGHT) + FORKLIFT_HOME_INSET + 19 - 1;
-            const BOTTOM_FORKLIFT_HOME_X = 540;
+            const BOTTOM_FORKLIFT_HOME_X = 520;
             const BOTTOM_FORKLIFT_HOME_Y = 565;
             const FORKLIFT_CARRY_LOCAL_X = 12.15;
             const FORKLIFT_CARRY_LOCAL_Y = -1.35;
@@ -1749,11 +1749,13 @@
             const platformH = ySign < 0 ? 30 : 26;
             const platformY = ySign < 0 ? railY - 30 : railY + 4;
             const buildingY = ySign < 0 ? platformY - 78 : platformY + platformH;
-            const parkingX = 529 + (142 - 120) / 2;
+            const stationDrawX = ySign < 0 ? 529 : 509;  // top stays left-fixed, bottom extends left
+            const stationDrawW = 162;                    // +20px wider for both
+            const parkingX = stationDrawX + (stationDrawW - 120) / 2;
             ctx.fillStyle = '#a8a8b8';
-            ctx.fillRect(529, platformY, 142, platformH);
+            ctx.fillRect(stationDrawX, platformY, stationDrawW, platformH);
             ctx.fillStyle = '#7a7a8a';
-            ctx.fillRect(529, buildingY, 142, 78);
+            ctx.fillRect(stationDrawX, buildingY, stationDrawW, 78);
             ctx.fillStyle = '#3f3f3f';
             ctx.fillRect(parkingX, pkgY, 120, 55);
             ctx.strokeStyle = '#e0e0e0';
