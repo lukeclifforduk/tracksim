@@ -27,9 +27,6 @@ const RIGHT_CX = CENTER_X + STRAIGHT_LENGTH / 2;
 const TOP_Y = CENTER_Y - CURVE_RADIUS;
 const BOTTOM_Y = CENTER_Y + CURVE_RADIUS;
 const TOTAL_TRACK_LENGTH = 2 * STRAIGHT_LENGTH + 2 * Math.PI * CURVE_RADIUS;
-const TRAIN_LENGTH = 42;
-const CARRIAGE_LENGTH = 26;
-const CARRIAGE_WIDTH = 20;
 const CARRIAGE_SEPARATION = 36;
 let baseSpeed = 275;
 let currentSpeed = baseSpeed;
@@ -354,10 +351,11 @@ if (!isRowFull(r)) return r;
 }
 return -1;
 }
+function flourRowDirection(row) { return row >= 2 ? 1 : -1; }
 function spawnFlourTraveler() {
 const row = findNextFillRow();
 if (row === -1) return;
-flourVerticalDirection = (row >= 2) ? 1 : -1;
+flourVerticalDirection = flourRowDirection(row);
 const gridY = FLOUR_STORAGE_Y + PALLET_BORDER;
 const targetY = gridY + row * PALLET_CELL_SIZE + PALLET_CELL_SIZE / 2;
 const rightX = FLOUR_STORAGE_X + PALLET_BORDER + PALLET_GRID_COLS * PALLET_CELL_SIZE + PALLET_BORDER;
@@ -372,7 +370,7 @@ x: entryX
 function addFlourToStorage() {
 const row = findNextFillRow();
 if (row === -1) return;
-flourVerticalDirection = (row >= 2) ? 1 : -1;
+flourVerticalDirection = flourRowDirection(row);
 if (flourPallets[row][4] < 4) {
 flourPallets[row][4]++;
 } else {
@@ -443,10 +441,6 @@ conveyorBlocks.push({dist: -12});
 this.loaded = Math.max(0, this.loaded - 1);
 this.craneTimer = 0.48 + Math.random() * 0.15;
 }
-return;
-}
-if (this.loaded >= this.trailerCapacity) {
-this.parkTimer = 999999;
 return;
 }
 this.parkTimer -= dt;
@@ -1567,7 +1561,14 @@ WIDTH, HEIGHT, CENTER_X, CENTER_Y,
 TOP_Y, BOTTOM_Y, LEFT_CX, RIGHT_CX, CURVE_RADIUS, STRAIGHT_LENGTH,
 STOP_DIST_1, STOP_DIST_2, BRAKE_DISTANCE,
 TOP_FORKLIFT_HOME_X, TOP_FORKLIFT_HOME_Y,
-BOTTOM_FORKLIFT_HOME_X, BOTTOM_FORKLIFT_HOME_Y
+BOTTOM_FORKLIFT_HOME_X, BOTTOM_FORKLIFT_HOME_Y,
+TOP_PLATFORM_HEIGHT, BOTTOM_PLATFORM_HEIGHT, BOTTOM_PLATFORM_OFFSET,
+BUILDING_HEIGHT, STATION_TOTAL_HEIGHT, CARRIAGE_SEPARATION,
+ASPHALT_X, ASPHALT_Y, ASPHALT_W, ASPHALT_H,
+},
+farmGeometry: {
+FARM_OUTER_X, FARM_OUTER_Y, FARM_OUTER_W, FARM_OUTER_H,
+FARM_BLOCK_SIZE, FARM_GRASS_BORDER, FARM_SOIL_COLS, FARM_SOIL_ROWS,
 },
 helpers: {
 isOnTopRoad, isOnBottomRoad, getPosition,
@@ -1673,19 +1674,17 @@ ctx.lineWidth = 1;
 ctx.strokeRect(bx + 1, by + 1, s - 2, s - 2);
 }
 function drawFarmPatch() {
-const fx = 1200 - 18 - 18 - (8 * 18) - 18;
-const fy = 7 * 18 - 18;
-const fw = 8 * 18 + 2 * 18;
-const fh = 10 * 18 + 2 * 18;
+const fx = FARM_OUTER_X, fy = FARM_OUTER_Y, fw = FARM_OUTER_W, fh = FARM_OUTER_H;
+const bs = sim.farmGeometry.FARM_BLOCK_SIZE;
 ctx.fillStyle = '#C9A87A';
-ctx.fillRect(fx, fy, 18, fh);
-ctx.fillRect(fx + fw - 18, fy, 18, fh);
-ctx.fillRect(fx, fy, fw, 18);
-ctx.fillRect(fx, fy + fh - 18, fw, 18);
-for (let y = fy; y < fy + fh; y += 18) drawTrackBlock(fx, y);
-for (let y = fy; y < fy + fh; y += 18) drawTrackBlock(fx + fw - 18, y);
-for (let x = fx + 18; x < fx + fw - 18; x += 18) drawTrackBlock(x, fy);
-for (let x = fx + 18; x < fx + fw - 18; x += 18) drawTrackBlock(x, fy + fh - 18);
+ctx.fillRect(fx, fy, bs, fh);
+ctx.fillRect(fx + fw - bs, fy, bs, fh);
+ctx.fillRect(fx, fy, fw, bs);
+ctx.fillRect(fx, fy + fh - bs, fw, bs);
+for (let y = fy; y < fy + fh; y += bs) drawTrackBlock(fx, y);
+for (let y = fy; y < fy + fh; y += bs) drawTrackBlock(fx + fw - bs, y);
+for (let x = fx + bs; x < fx + fw - bs; x += bs) drawTrackBlock(x, fy);
+for (let x = fx + bs; x < fx + fw - bs; x += bs) drawTrackBlock(x, fy + fh - bs);
 if (sim && sim.farmCells) {
 for (const cell of sim.farmCells) {
 drawWheatCell(cell);
@@ -1694,24 +1693,24 @@ drawWheatCell(cell);
 }
 function drawAsphaltParkingBay() {
 ctx.fillStyle = '#c9b38a';
-ctx.fillRect(1052, 72, 78, 28);
+ctx.fillRect(ASPHALT_X, ASPHALT_Y, ASPHALT_W, ASPHALT_H);
 ctx.strokeStyle = '#8a6f4f';
 ctx.lineWidth = 2;
 ctx.setLineDash([8, 8]);
-ctx.strokeRect(1056, 76, 70, 20);
+ctx.strokeRect(ASPHALT_X + 4, ASPHALT_Y + 4, ASPHALT_W - 8, ASPHALT_H - 8);
 ctx.setLineDash([]);
 }
 function drawStorage(sx, sy, count) {
 ctx.strokeStyle = '#ffffff';
 ctx.lineWidth = 4;
-ctx.strokeRect(sx, sy, 80, 80);
+ctx.strokeRect(sx, sy, STORAGE_WIDTH, STORAGE_HEIGHT);
 ctx.fillStyle = '#222222';
-ctx.fillRect(sx + 4, sy + 4, 72, 72);
+ctx.fillRect(sx + 4, sy + 4, STORAGE_WIDTH - 8, STORAGE_HEIGHT - 8);
 for (let i = 0; i < count; i++) {
-const cx = sx + 5 + (i % 5) * 14;
-const cy = sy + 5 + Math.floor(i / 5) * 14;
-ctx.fillStyle = '#d4c3a8'; ctx.fillRect(cx, cy, 13, 13);
-ctx.fillStyle = '#b9a98f'; ctx.fillRect(cx + 2, cy + 2, 9, 9);
+const cx = sx + STORAGE_CELL_MARGIN + (i % STORAGE_COLS) * STORAGE_CELL_STEP;
+const cy = sy + STORAGE_CELL_MARGIN + Math.floor(i / STORAGE_COLS) * STORAGE_CELL_STEP;
+ctx.fillStyle = '#d4c3a8'; ctx.fillRect(cx, cy, STORAGE_CELL_SIZE, STORAGE_CELL_SIZE);
+ctx.fillStyle = '#b9a98f'; ctx.fillRect(cx + 2, cy + 2, STORAGE_CELL_SIZE - 4, STORAGE_CELL_SIZE - 4);
 ctx.fillStyle = '#9e8a6f'; ctx.fillRect(cx + 5, cy + 5, 3, 3);
 }
 }
@@ -1746,24 +1745,26 @@ ctx.stroke();
 ctx.setLineDash([]);
 }
 function drawStationHalf(railY, ySign, pkgY, forkliftHomeX, forkliftHomeY) {
-const platformH = ySign < 0 ? 30 : 26;
-const platformY = ySign < 0 ? railY - 30 : railY + 4;
-const buildingY = ySign < 0 ? platformY - 78 : platformY + platformH;
-const parkingX = 529 + (142 - 120) / 2;
+const platformH = ySign < 0 ? TOP_PLATFORM_HEIGHT : BOTTOM_PLATFORM_HEIGHT;
+const platformY = ySign < 0 ? railY - TOP_PLATFORM_HEIGHT : railY + BOTTOM_PLATFORM_OFFSET;
+const buildingY = ySign < 0 ? platformY - BUILDING_HEIGHT : platformY + platformH;
+const parkingX = STATION_X + (STATION_WIDTH - PARKING_WIDTH) / 2;
 ctx.fillStyle = '#a8a8b8';
-ctx.fillRect(529, platformY, 142, platformH);
+ctx.fillRect(STATION_X, platformY, STATION_WIDTH, platformH);
 ctx.fillStyle = '#7a7a8a';
-ctx.fillRect(529, buildingY, 142, 78);
+ctx.fillRect(STATION_X, buildingY, STATION_WIDTH, BUILDING_HEIGHT);
 ctx.fillStyle = '#3f3f3f';
-ctx.fillRect(parkingX, pkgY, 120, 55);
+ctx.fillRect(parkingX, pkgY, PARKING_WIDTH, PARKING_HEIGHT);
 ctx.strokeStyle = '#e0e0e0';
 ctx.lineWidth = 3;
-const lineTopY = ySign < 0 ? pkgY + (55 - 21) / 2 : pkgY;
-const lineBotY = ySign < 0 ? pkgY + 55 : pkgY + (55 - 21) / 2 + 21;
+const parkingLineInset = 21;
+const lineTopY = ySign < 0 ? pkgY + (PARKING_HEIGHT - parkingLineInset) / 2 : pkgY;
+const lineBotY = ySign < 0 ? pkgY + PARKING_HEIGHT : pkgY + (PARKING_HEIGHT - parkingLineInset) / 2 + parkingLineInset;
+const spotW = PARKING_WIDTH / 5;
 for (let i = 1; i < 5; i++) {
 ctx.beginPath();
-ctx.moveTo(parkingX + i * 24, lineTopY);
-ctx.lineTo(parkingX + i * 24, lineBotY);
+ctx.moveTo(parkingX + i * spotW, lineTopY);
+ctx.lineTo(parkingX + i * spotW, lineBotY);
 ctx.stroke();
 }
 ctx.setLineDash([5, 5]);
@@ -1775,8 +1776,8 @@ ctx.setLineDash([]);
 function drawRoads() {
 ctx.lineJoin = 'round';
 ctx.lineCap = 'square';
-const parkingX = 529 + (142 - 120) / 2;
-drawRoadLoop(TOP_ROAD_COORDS, parkingX + 120 - 10);
+const parkingX = STATION_X + (STATION_WIDTH - PARKING_WIDTH) / 2;
+drawRoadLoop(TOP_ROAD_COORDS, parkingX + PARKING_WIDTH - 10);
 drawRoadLoop(BOT_ROAD_COORDS, parkingX + 10);
 ctx.lineJoin = 'miter';
 ctx.lineCap = 'butt';
@@ -2276,9 +2277,6 @@ ctx.fillRect(fx + 0.5, fy + 0.5, 1, 2);
 }
 }
 }
-function drawConveyor() {
-drawConveyorHorizontal();
-}
 const sim = createSim();
 const {
 WIDTH, HEIGHT, CENTER_X, CENTER_Y,
@@ -2292,18 +2290,11 @@ topParkingY, bottomParkingY, PARKING_WIDTH, PARKING_HEIGHT,
 TOP_FORKLIFT_HOME_X, TOP_FORKLIFT_HOME_Y,
 BOTTOM_FORKLIFT_HOME_X, BOTTOM_FORKLIFT_HOME_Y,
 STOP_DIST_1, STOP_DIST_2, BRAKE_DISTANCE,
+TOP_PLATFORM_HEIGHT, BOTTOM_PLATFORM_HEIGHT, BOTTOM_PLATFORM_OFFSET,
+BUILDING_HEIGHT, CARRIAGE_SEPARATION,
+ASPHALT_X, ASPHALT_Y, ASPHALT_W, ASPHALT_H,
 } = sim.geometry;
-const TOP_PLATFORM_HEIGHT = 30;
-const BOTTOM_PLATFORM_HEIGHT = 26;
-const BOTTOM_PLATFORM_OFFSET = 4;
-const BUILDING_HEIGHT = 78;
-const PARKING_GAP = 4;
-const STATION_TOTAL_HEIGHT = 108;
-const TRAIN_LENGTH = 42;
-const TRAIN_WIDTH = 18;
-const CARRIAGE_LENGTH = 26;
-const CARRIAGE_WIDTH = 20;
-const CARRIAGE_SEPARATION = 36;
+const { FARM_OUTER_X, FARM_OUTER_Y, FARM_OUTER_W, FARM_OUTER_H } = sim.farmGeometry;
 let lastTime = 0;
 function animate(timestamp) {
 if (!lastTime) lastTime = timestamp;
