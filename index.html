@@ -1373,6 +1373,17 @@
   }
   }
   }
+  const PERSON_AREA_LEFT = 6;
+  const PERSON_AREA_TOP = HEIGHT - 84;
+  const PERSON_AREA_RIGHT = 84;
+  const PERSON_AREA_BOTTOM = HEIGHT - 6;
+  const PERSON_SPEED = 28;
+  const PERSON_LEG_INTERVAL = 8 / 60;
+  let personX = 45;
+  let personY = HEIGHT - 45;
+  let personDirIndex = 0;
+  let personLegFrame = 0;
+  let personLegTimer = 0;
   const topBlocks = [];
   const bottomBlocks = [];
   const trucks = [];
@@ -1468,6 +1479,22 @@
   }
   distance += currentSpeed * dt;
   }
+  function updatePerson(dt) {
+  personLegTimer += dt;
+  if (personLegTimer >= PERSON_LEG_INTERVAL) { personLegTimer -= PERSON_LEG_INTERVAL; personLegFrame = 1 - personLegFrame; }
+  const PDIRS = ['right','down','left','upRight','down','upLeft','right','downLeft','up','downRight','left','up'];
+  const dir = PDIRS[personDirIndex];
+  const mv = PERSON_SPEED * dt;
+  const diag = mv * 0.7071;
+  if (dir === 'right') { personX += mv; if (personX >= PERSON_AREA_RIGHT) { personX = PERSON_AREA_RIGHT; personDirIndex = (personDirIndex + 1) % PDIRS.length; } }
+  else if (dir === 'down') { personY += mv; if (personY >= PERSON_AREA_BOTTOM) { personY = PERSON_AREA_BOTTOM; personDirIndex = (personDirIndex + 1) % PDIRS.length; } }
+  else if (dir === 'left') { personX -= mv; if (personX <= PERSON_AREA_LEFT) { personX = PERSON_AREA_LEFT; personDirIndex = (personDirIndex + 1) % PDIRS.length; } }
+  else if (dir === 'up') { personY -= mv; if (personY <= PERSON_AREA_TOP) { personY = PERSON_AREA_TOP; personDirIndex = (personDirIndex + 1) % PDIRS.length; } }
+  else if (dir === 'upRight') { personX += diag; personY -= diag; if (personX >= PERSON_AREA_RIGHT || personY <= PERSON_AREA_TOP) { personX = Math.min(personX, PERSON_AREA_RIGHT); personY = Math.max(personY, PERSON_AREA_TOP); personDirIndex = (personDirIndex + 1) % PDIRS.length; } }
+  else if (dir === 'upLeft') { personX -= diag; personY -= diag; if (personX <= PERSON_AREA_LEFT || personY <= PERSON_AREA_TOP) { personX = Math.max(personX, PERSON_AREA_LEFT); personY = Math.max(personY, PERSON_AREA_TOP); personDirIndex = (personDirIndex + 1) % PDIRS.length; } }
+  else if (dir === 'downLeft') { personX -= diag; personY += diag; if (personX <= PERSON_AREA_LEFT || personY >= PERSON_AREA_BOTTOM) { personX = Math.max(personX, PERSON_AREA_LEFT); personY = Math.min(personY, PERSON_AREA_BOTTOM); personDirIndex = (personDirIndex + 1) % PDIRS.length; } }
+  else if (dir === 'downRight') { personX += diag; personY += diag; if (personX >= PERSON_AREA_RIGHT || personY >= PERSON_AREA_BOTTOM) { personX = Math.min(personX, PERSON_AREA_RIGHT); personY = Math.min(personY, PERSON_AREA_BOTTOM); personDirIndex = (personDirIndex + 1) % PDIRS.length; } }
+  }
   function step(dt) {
   updateTrain(dt);
   for (const t of trucks) t.update(dt);
@@ -1483,10 +1510,12 @@
   windmillSailAngle = (windmillSailAngle + WINDMILL_SAIL_SPEED * dt * conveyorVisualSpeed) % (2 * Math.PI);
   millstoneAngle = (millstoneAngle + MILLSTONE_SPEED * dt * conveyorVisualSpeed) % (2 * Math.PI);
   }
+  updatePerson(dt);
   }
   return {
   step,
   initSim,
+  get personState() { return { x: personX, y: personY, dirIndex: personDirIndex, legFrame: personLegFrame }; },
   get distance() { return distance; },
   get trainState() { return trainState; },
   get trainAtStation() { return trainAtStation; },
@@ -1590,6 +1619,59 @@
   truckCab: '#e69900', truckTrailer: '#cc5500', truckWindow: '#add8e6',
   forkliftBody: '#ffcc00', forkliftForks: '#bbbbbb',
   };
+  const PERSON_SPRITES = {
+  legsSpread: [
+  ['_','P','P','P','_'],['_','P','P','P','_'],['_','P','P','P','_'],
+  ['_','R','R','R','_'],['_','R','R','R','_'],['_','R','R','R','_'],
+  ['_','B','B','B','_'],['_','B','B','B','_'],['_','B','_','B','_']
+  ],
+  right: [
+  ['_','P','P','P','_'],['_','P','P','P','_'],['_','P','P','P','_'],
+  ['_','R','R','R','_'],['_','R','R','R','_'],['_','R','R','R','_'],
+  ['_','B','B','B','_'],['_','B','B','B','_'],['B','_','_','B','_']
+  ],
+  left: [
+  ['_','P','P','P','_'],['_','P','P','P','_'],['_','P','P','P','_'],
+  ['_','R','R','R','_'],['_','R','R','R','_'],['_','R','R','R','_'],
+  ['_','B','B','B','_'],['_','B','B','B','_'],['_','B','_','_','B']
+  ],
+  upDownLeft: [
+  ['_','P','P','P','_'],['_','P','P','P','_'],['_','P','P','P','_'],
+  ['_','R','R','R','_'],['_','R','R','R','_'],['_','R','R','R','_'],
+  ['_','B','B','B','_'],['_','B','B','B','_'],['_','B','_','B','_'],
+  ['_','B','_','_','_']
+  ],
+  upDownRight: [
+  ['_','P','P','P','_'],['_','P','P','P','_'],['_','P','P','P','_'],
+  ['_','R','R','R','_'],['_','R','R','R','_'],['_','R','R','R','_'],
+  ['_','B','B','B','_'],['_','B','B','B','_'],['_','B','_','B','_'],
+  ['_','_','_','B','_']
+  ]
+  };
+  const PERSON_COLORS = { P: '#FF69B4', R: '#E63946', B: '#1A1A1A' };
+  const PERSON_DIRECTIONS = ['right','down','left','upRight','down','upLeft','right','downLeft','up','downRight','left','up'];
+  function getPersonSprite(dir, legFrame) {
+  if (['right','upRight','downRight'].includes(dir)) return legFrame ? PERSON_SPRITES.legsSpread : PERSON_SPRITES.right;
+  if (['left','upLeft','downLeft'].includes(dir)) return legFrame ? PERSON_SPRITES.legsSpread : PERSON_SPRITES.left;
+  return legFrame ? PERSON_SPRITES.upDownRight : PERSON_SPRITES.upDownLeft;
+  }
+  function drawPerson() {
+  ctx.fillStyle = '#b0b0b0';
+  ctx.fillRect(0, HEIGHT - 90, 90, 90);
+  const ps = sim.personState;
+  const dir = PERSON_DIRECTIONS[ps.dirIndex];
+  const sprite = getPersonSprite(dir, ps.legFrame);
+  const drawX = Math.floor(ps.x - sprite[0].length / 2);
+  const drawY = Math.floor(ps.y - sprite.length / 2);
+  for (let r = 0; r < sprite.length; r++) {
+  for (let c = 0; c < sprite[r].length; c++) {
+  const key = sprite[r][c];
+  if (key === '_') continue;
+  ctx.fillStyle = PERSON_COLORS[key];
+  ctx.fillRect(drawX + c, drawY + r, 1, 1);
+  }
+  }
+  }
   function drawTrackBlock(x, y) {
   const TRACK_MAIN = '#C9A87A';
   const TRACK_SPECKLE_DARK = '#8B7355';
@@ -2333,6 +2415,7 @@
   drawFlourTravelers();
   drawFlourStorage();
   drawWindmillTop();
+  drawPerson();
   requestAnimationFrame(animate);
   }
   sim.initSim();
