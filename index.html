@@ -1384,6 +1384,14 @@
   let personDirIndex = 0;
   let personLegFrame = 0;
   let personLegTimer = 0;
+  const CAR_AREA_LEFT = 99;
+  const CAR_AREA_TOP = HEIGHT - 81;
+  const CAR_AREA_RIGHT = 171;
+  const CAR_AREA_BOTTOM = HEIGHT - 9;
+  const CAR_SPEED = 28;
+  let carX = 99;
+  let carY = HEIGHT - 81;
+  let carDirIndex = 0;
   const topBlocks = [];
   const bottomBlocks = [];
   const trucks = [];
@@ -1495,6 +1503,15 @@
   else if (dir === 'downLeft') { personX -= diag; personY += diag; if (personX <= PERSON_AREA_LEFT || personY >= PERSON_AREA_BOTTOM) { personX = Math.max(personX, PERSON_AREA_LEFT); personY = Math.min(personY, PERSON_AREA_BOTTOM); personDirIndex = (personDirIndex + 1) % PDIRS.length; } }
   else if (dir === 'downRight') { personX += diag; personY += diag; if (personX >= PERSON_AREA_RIGHT || personY >= PERSON_AREA_BOTTOM) { personX = Math.min(personX, PERSON_AREA_RIGHT); personY = Math.min(personY, PERSON_AREA_BOTTOM); personDirIndex = (personDirIndex + 1) % PDIRS.length; } }
   }
+  function updateCar(dt) {
+  const CDIRS = ['right','down','left','up'];
+  const dir = CDIRS[carDirIndex];
+  const mv = CAR_SPEED * dt;
+  if (dir === 'right') { carX += mv; if (carX >= CAR_AREA_RIGHT) { carX = CAR_AREA_RIGHT; carDirIndex = (carDirIndex + 1) % 4; } }
+  else if (dir === 'down') { carY += mv; if (carY >= CAR_AREA_BOTTOM) { carY = CAR_AREA_BOTTOM; carDirIndex = (carDirIndex + 1) % 4; } }
+  else if (dir === 'left') { carX -= mv; if (carX <= CAR_AREA_LEFT) { carX = CAR_AREA_LEFT; carDirIndex = (carDirIndex + 1) % 4; } }
+  else if (dir === 'up') { carY -= mv; if (carY <= CAR_AREA_TOP) { carY = CAR_AREA_TOP; carDirIndex = (carDirIndex + 1) % 4; } }
+  }
   function step(dt) {
   updateTrain(dt);
   for (const t of trucks) t.update(dt);
@@ -1511,11 +1528,13 @@
   millstoneAngle = (millstoneAngle + MILLSTONE_SPEED * dt * conveyorVisualSpeed) % (2 * Math.PI);
   }
   updatePerson(dt);
+  updateCar(dt);
   }
   return {
   step,
   initSim,
   get personState() { return { x: personX, y: personY, dirIndex: personDirIndex, legFrame: personLegFrame }; },
+  get carState() { return { x: carX, y: carY, dirIndex: carDirIndex }; },
   get distance() { return distance; },
   get trainState() { return trainState; },
   get trainAtStation() { return trainAtStation; },
@@ -1668,6 +1687,54 @@
   const key = sprite[r][c];
   if (key === '_') continue;
   ctx.fillStyle = PERSON_COLORS[key];
+  ctx.fillRect(drawX + c, drawY + r, 1, 1);
+  }
+  }
+  }
+  function rotateSprite90(sprite) {
+  const rows = sprite.length, cols = sprite[0].length;
+  const out = Array.from({length: cols}, () => Array(rows).fill('_'));
+  for (let r = 0; r < rows; r++)
+  for (let c = 0; c < cols; c++)
+  out[c][rows - 1 - r] = sprite[r][c];
+  return out;
+  }
+  const CAR_SPRITE_BASE = [
+  ['_','_','_','_','B','B','B','_','_','_','_','B','B','B','_','_','_','_'],
+  ['_','_','_','B','B','B','B','B','B','B','B','B','B','B','B','_','_','_'],
+  ['B','B','B','B','G','G','G','G','G','G','G','G','G','G','B','B','B','B'],
+  ['B','G','G','B','G','G','G','G','G','G','B','B','B','B','B','G','G','B'],
+  ['B','G','G','B','G','G','G','G','G','G','B','W','W','W','B','G','G','B'],
+  ['B','G','G','B','G','G','G','G','G','G','B','W','W','W','B','G','G','B'],
+  ['B','G','G','B','G','G','G','G','G','G','B','W','W','W','B','G','G','B'],
+  ['B','G','G','B','G','G','G','G','G','G','B','W','W','W','B','G','G','B'],
+  ['B','G','G','B','G','G','G','G','G','G','B','B','B','B','B','G','G','B'],
+  ['B','B','B','B','G','G','G','G','G','G','G','G','G','G','B','B','B','B'],
+  ['_','_','_','B','B','B','B','B','B','B','B','B','B','B','B','_','_','_'],
+  ['_','_','_','_','B','B','B','_','_','_','_','_','B','B','B','_','_','_']
+  ];
+  const CAR_SPRITES = (() => {
+  const r = CAR_SPRITE_BASE;
+  const d = rotateSprite90(r);
+  const l = rotateSprite90(d);
+  const u = rotateSprite90(l);
+  return { right: r, down: d, left: l, up: u };
+  })();
+  const CAR_COLORS = { B: '#111111', G: '#22cc44', W: '#88ddff' };
+  const CAR_LOOP_DIRS = ['right','down','left','up'];
+  function drawCar() {
+  ctx.fillStyle = '#444444';
+  ctx.fillRect(90, HEIGHT - 90, 90, 90);
+  const cs = sim.carState;
+  const dir = CAR_LOOP_DIRS[cs.dirIndex];
+  const sprite = CAR_SPRITES[dir];
+  const drawX = Math.floor(cs.x - sprite[0].length / 2);
+  const drawY = Math.floor(cs.y - sprite.length / 2);
+  for (let r = 0; r < sprite.length; r++) {
+  for (let c = 0; c < sprite[r].length; c++) {
+  const key = sprite[r][c];
+  if (key === '_') continue;
+  ctx.fillStyle = CAR_COLORS[key];
   ctx.fillRect(drawX + c, drawY + r, 1, 1);
   }
   }
@@ -2416,6 +2483,7 @@
   drawFlourStorage();
   drawWindmillTop();
   drawPerson();
+  drawCar();
   requestAnimationFrame(animate);
   }
   sim.initSim();
