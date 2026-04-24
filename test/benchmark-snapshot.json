@@ -1,0 +1,18 @@
+{
+  "capturedAt": "2026-04-24T20:53:34.793Z",
+  "bench001": {
+    "topStopsCount": 6,
+    "botStopsCount": 6,
+    "finalTopActive": 177,
+    "finalBotActive": 27,
+    "trainStopCount": 12,
+    "storageViolations": 0
+  },
+  "bench002": {
+    "intervalSeconds": 24.26972727272727
+  },
+  "bench004": {
+    "farmCellsDone": 80,
+    "flourTotal": 80
+  }
+}
