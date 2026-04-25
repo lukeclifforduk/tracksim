@@ -67,9 +67,10 @@ let ROW_VARIANTS = [];
 
 function genRowVariants() {
   const v = ['drv', 'drv', 'drv', 'drv', 'drv', 'drv'];
-  // All 6 positions eligible; no two adjacent std bays; place 2 or 3 per row
-  const eligible = [0, 1, 2, 3, 4, 5].sort(() => Math.random() - 0.5);
-  const count = 2 + Math.floor(Math.random() * 2);  // 2 or 3 std bays per row
+  // Only inner positions eligible; outer buildings (0 & 5) always drv
+  // Place 1 or 2 non-adjacent std bays so a single isolated bay is valid
+  const eligible = [1, 2, 3, 4].sort(() => Math.random() - 0.5);
+  const count = 1 + Math.floor(Math.random() * 2);  // 1 or 2 per row
   const placed = [];
   for (const pos of eligible) {
     if (!placed.some(q => Math.abs(q - pos) <= 1)) {
