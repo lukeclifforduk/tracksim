@@ -9,47 +9,51 @@
   </style>
 </head>
 <body>
-<canvas id="c" width="1200" height="700"></canvas>
+<canvas id="c" width="1200" height="750"></canvas>
 <script>
 'use strict';
 
 // ── Constants ──────────────────────────────────────────────────────────────
-const W = 1200, H = 700;
+const W = 1200, H = 750;
 const GRID = 18;
 const WALK_SPEED = 28;
 const CAR_SPEED  = 50;
 
-// Town footprint: X=0-270, Y=430-700 (flush corner, 15×15 grid)
-const TX = 0,   TY = 430;
-const TW = 270, TH = 270;
+// Town footprint: X=0-270, Y=444-750 (flush corner, 17 rows × 15 cols)
+// 17 rows: 7 bakery rows + 1 main street + 3×(garden+house+crescent) = 17
+const TX = 0,   TY = 444;
+const TW = 270, TH = 306;
+
+// Bakery block: X=0-126, Y=TY to TY+126 (7 rows × 7 cols)
+const BAKERY_X = 0,   BAKERY_Y = TY;
+const BAKERY_W = 126, BAKERY_H = 126;   // 7×7 grid units
 
 // Road Y coordinates (top of each 18px road strip)
-const MAIN_Y  = 448;   // Main E-W street
-const CRES1_Y = 502;   // Crescent 1
-const CRES2_Y = 556;   // Crescent 2
-const CRES3_Y = 610;   // Crescent 3 (south loop)
+const MAIN_Y  = TY + 126;  // 570 — main E-W street (bottom of bakery block)
+const CRES1_Y = MAIN_Y + 54;   // 624 — Crescent 1
+const CRES2_Y = CRES1_Y + 54;  // 678 — Crescent 2
+const CRES3_Y = CRES2_Y + 54;  // 732 — Crescent 3 (south loop, = H-18 = canvas bottom)
 
 // Road X coordinates (left edge of each 18px road strip)
 const WPERIM_X = 0;    // West perimeter
-const SPINE_X  = 126;  // Central spine
+const SPINE_X  = 126;  // Central spine (also right edge of bakery block)
 const EPERIM_X = 252;  // East perimeter
 const NORTH_X  = 126;  // North entry (same as spine)
 
 // Road centre lines (for waypoints)
-const MAIN_CY  = MAIN_Y  + GRID / 2;   // 457
-const CRES1_CY = CRES1_Y + GRID / 2;   // 511
-const CRES2_CY = CRES2_Y + GRID / 2;   // 565
-const CRES3_CY = CRES3_Y + GRID / 2;   // 619
+const MAIN_CY  = MAIN_Y  + GRID / 2;   // 579
+const CRES1_CY = CRES1_Y + GRID / 2;   // 633
+const CRES2_CY = CRES2_Y + GRID / 2;   // 687
+const CRES3_CY = CRES3_Y + GRID / 2;   // 741
 const WPERIM_CX = WPERIM_X + GRID / 2; //   9
 const SPINE_CX  = SPINE_X  + GRID / 2; // 135
 const EPERIM_CX = EPERIM_X + GRID / 2; // 261
 
-// Residential rows: garden starts right below main street
-// Row garden faces the road above it; parking/access is the crescent below
+// Residential rows
 const ROWS = [
-  { gardenY: 466, houseY: 484, crescentY: CRES1_Y },
-  { gardenY: 520, houseY: 538, crescentY: CRES2_Y },
-  { gardenY: 574, houseY: 592, crescentY: CRES3_Y },
+  { gardenY: MAIN_Y + GRID, houseY: MAIN_Y + GRID*2, crescentY: CRES1_Y },
+  { gardenY: CRES1_Y + GRID, houseY: CRES1_Y + GRID*2, crescentY: CRES2_Y },
+  { gardenY: CRES2_Y + GRID, houseY: CRES2_Y + GRID*2, crescentY: CRES3_Y },
 ];
 
 // 6 buildings per row, bilateral symmetric about X=135
@@ -58,10 +62,24 @@ const BLDG_XS = [18, 54, 90, 144, 180, 216];
 // drv = driveway parking, std = road bay parking
 const BLDG_VARIANTS = ['drv','std','drv','drv','std','drv'];
 
-// ── Colour palette ─────────────────────────────────────────────────────────
+// ── Colour palettes (30 entries each) ─────────────────────────────────────
+// PALETTE: shirt/car colour per resident (earthy, muted)
 const PALETTE = [
   '#b25a3c','#c9a043','#6a8e5a','#3d7c8c','#5a6a8e',
   '#8e3d4a','#6a4d7a','#d9c9a3','#4a6e4a','#a87a4a',
+  '#c46a3a','#7a8e3c','#4a7a9e','#9e5a3c','#6e4a8e',
+  '#b89060','#3c6e5a','#8e7a3c','#5a3c6e','#7a9e7a',
+  '#c4824a','#4a6e8e','#8e4a5a','#6e8e4a','#a84a6a',
+  '#5a7a4a','#9e7a5a','#4a5a8e','#8e6a4a','#6a4a3c',
+];
+// BED_PALETTE: matching bed linen colour per resident (lighter/softer tonal match)
+const BED_PALETTE = [
+  '#e8b89a','#f0d890','#b8d4a8','#90c4d8','#b0b8d8',
+  '#d8a0a8','#b8a0d0','#f4ecd8','#98c298','#d4b898',
+  '#f0c098','#c4d898','#90bcd8','#d8a888','#b898d8',
+  '#e8d0a8','#90bca8','#d8c890','#a890c0','#c0d8c0',
+  '#f0c098','#90b8d8','#d898a8','#b8d898','#e098b8',
+  '#a8c498','#d8c0a8','#9098c8','#d8b898','#b898a0',
 ];
 
 // ── Sprites ────────────────────────────────────────────────────────────────
@@ -180,32 +198,88 @@ function drawRoads() {
 }
 
 // ── Draw: public area ──────────────────────────────────────────────────────
+// Public bakery zone constants (used by both drawing and AI)
+const BAK_PLAZA_X = 0,   BAK_PLAZA_Y = TY,       BAK_PLAZA_W = 54, BAK_PLAZA_H = 54;
+const BAK_PUBPARK_X = 54, BAK_PUBPARK_Y = TY,     BAK_PUBPARK_W = 72, BAK_PUBPARK_H = 54;
+const BAK_BLDG_X = 0,   BAK_BLDG_Y = TY + 54,    BAK_BLDG_W = 108, BAK_BLDG_H = 54;
+const BAK_ALLEY_X = 108, BAK_ALLEY_Y = TY + 54,  BAK_ALLEY_W = 18,  BAK_ALLEY_H = 72;
+const BAK_FORE_X = 0,   BAK_FORE_Y = TY + 108,   BAK_FORE_W = 108, BAK_FORE_H = 18;
+
+// Public car parking bays (AI-accessible destinations)
+const PUBLIC_BAYS = [];
+for (let i = 0; i < 4; i++) PUBLIC_BAYS.push({ x: BAK_PUBPARK_X + 9 + i*18, y: BAK_PUBPARK_Y + 27, heading: 'S' });
+for (let i = 0; i < 6; i++) PUBLIC_BAYS.push({ x: BAK_FORE_X + 9 + i*18, y: BAK_FORE_Y + 9,     heading: 'N' });
+
+// ── Proximity and exclusion geometry ──────────────────────────────────────
+const ROAD_RECTS = [
+  { x: NORTH_X,  y: 0,       w: GRID, h: MAIN_Y },
+  { x: 0,        y: MAIN_Y,  w: W,    h: GRID },
+  { x: WPERIM_X, y: MAIN_Y,  w: GRID, h: CRES3_Y + GRID - MAIN_Y },
+  { x: EPERIM_X, y: MAIN_Y,  w: GRID, h: CRES3_Y + GRID - MAIN_Y },
+  { x: SPINE_X,  y: MAIN_Y,  w: GRID, h: CRES3_Y + GRID - MAIN_Y },
+  { x: TX,       y: CRES1_Y, w: TW,   h: GRID },
+  { x: TX,       y: CRES2_Y, w: TW,   h: GRID },
+  { x: TX,       y: CRES3_Y, w: TW,   h: GRID },
+];
+const TRACK_ZONES = [];  // placeholder — no tracks yet; future train lines excluded here
+const PUBLIC_WALK_RECTS = [
+  { x: BAK_PLAZA_X,   y: BAK_PLAZA_Y,   w: BAK_PLAZA_W,  h: BAK_PLAZA_H  },
+  { x: BAK_PUBPARK_X, y: BAK_PUBPARK_Y, w: BAK_PUBPARK_W, h: BAK_PUBPARK_H },
+  { x: BAK_FORE_X,    y: BAK_FORE_Y,    w: BAK_FORE_W,   h: BAK_FORE_H   },
+];
+const GRASS_RADIUS = 10 * GRID;  // 180px max grass-walk radius from any road
+
 function drawPublicArea() {
-  // Town square X=0-90
+  // ── Plaza (town square) X=0-54, Y=TY to TY+54
   ctx.fillStyle = '#c9b38a';
-  ctx.fillRect(0, TY, 90, GRID);
-  ctx.strokeStyle = '#a89060'; ctx.lineWidth = 1;
-  ctx.strokeRect(0, TY, 90, GRID);
+  ctx.fillRect(BAK_PLAZA_X, BAK_PLAZA_Y, BAK_PLAZA_W, BAK_PLAZA_H);
+  // benches
+  ctx.fillStyle = '#7a5a3c';
+  ctx.fillRect(6, TY + 10, 14, 4);
+  ctx.fillRect(6, TY + 36, 14, 4);
+  ctx.fillRect(34, TY + 10, 14, 4);
+  ctx.fillRect(34, TY + 36, 14, 4);
 
-  // Bakery X=90-162
-  ctx.fillStyle = '#e8c97a';
-  ctx.fillRect(90, TY, 72, GRID);
-  ctx.strokeStyle = '#5a4a36'; ctx.lineWidth = 2;
-  ctx.strokeRect(90, TY, 72, GRID);
-  ctx.fillStyle = '#c4956a'; ctx.fillRect(90, TY, 72, 3);       // roof strip
-  ctx.fillStyle = '#7a4a28'; ctx.fillRect(123, TY + 6, 6, 12);  // door
-
-  // Bakery parking X=162-252 (5 bays)
-  ctx.fillStyle = '#3f3f3f';
-  ctx.fillRect(162, TY, 90, GRID);
+  // ── Public car park X=54-126, Y=TY to TY+54 (4 perpendicular bays, 2 rows)
+  ctx.fillStyle = '#3c3c3c';
+  ctx.fillRect(BAK_PUBPARK_X, BAK_PUBPARK_Y, BAK_PUBPARK_W, BAK_PUBPARK_H);
   ctx.strokeStyle = '#e0e0e0'; ctx.lineWidth = 1;
-  for (let i = 0; i < 5; i++) {
-    ctx.strokeRect(162 + i * 18 + 1, TY + 1, 16, GRID - 2);
+  for (let i = 0; i < 4; i++) {
+    ctx.strokeRect(BAK_PUBPARK_X + i*18 + 1, BAK_PUBPARK_Y + 1, 16, 26);
+    ctx.strokeRect(BAK_PUBPARK_X + i*18 + 1, BAK_PUBPARK_Y + 27, 16, 26);
   }
 
-  // Corner plaza X=252-270 (connects east perimeter)
-  ctx.fillStyle = '#c9b38a';
-  ctx.fillRect(252, TY, 18, GRID);
+  // ── Bakery building X=0-108, Y=TY+54 to TY+108
+  ctx.fillStyle = '#e8c97a';
+  ctx.fillRect(BAK_BLDG_X, BAK_BLDG_Y, BAK_BLDG_W, BAK_BLDG_H);
+  ctx.strokeStyle = '#5a4a36'; ctx.lineWidth = 2;
+  ctx.strokeRect(BAK_BLDG_X, BAK_BLDG_Y, BAK_BLDG_W, BAK_BLDG_H);
+  // Roof strip across top
+  ctx.fillStyle = '#c4956a';
+  ctx.fillRect(BAK_BLDG_X, BAK_BLDG_Y, BAK_BLDG_W, 4);
+  // Windows
+  ctx.fillStyle = '#9ad6e8';
+  ctx.fillRect(8, BAK_BLDG_Y + 8, 14, 10);
+  ctx.fillRect(40, BAK_BLDG_Y + 8, 14, 10);
+  ctx.fillRect(68, BAK_BLDG_Y + 8, 14, 10);
+  // Doors on south face (row 5, facing forecourt)
+  ctx.fillStyle = '#7a4a28';
+  ctx.fillRect(36, BAK_BLDG_Y + BAK_BLDG_H - 12, 12, 12);
+  ctx.fillRect(60, BAK_BLDG_Y + BAK_BLDG_H - 12, 12, 12);
+  // Door detail lines
+  ctx.strokeStyle = '#5a3a1a'; ctx.lineWidth = 1;
+  ctx.strokeRect(36, BAK_BLDG_Y + BAK_BLDG_H - 12, 12, 12);
+  ctx.strokeRect(60, BAK_BLDG_Y + BAK_BLDG_H - 12, 12, 12);
+
+  // ── Side alley X=108-126, Y=TY+54 to TY+126 (connects spine to forecourt)
+  ctx.fillStyle = '#4a4a4a';
+  ctx.fillRect(BAK_ALLEY_X, BAK_ALLEY_Y, BAK_ALLEY_W, BAK_ALLEY_H);
+
+  // ── Car forecourt X=0-108, Y=TY+108 to TY+126 (6 nose-in bays)
+  ctx.fillStyle = '#3c3c3c';
+  ctx.fillRect(BAK_FORE_X, BAK_FORE_Y, BAK_FORE_W, BAK_FORE_H);
+  ctx.strokeStyle = '#e0e0e0'; ctx.lineWidth = 1;
+  for (let i = 0; i < 6; i++) ctx.strokeRect(BAK_FORE_X + i*18 + 1, BAK_FORE_Y + 1, 16, 16);
 }
 
 // ── Draw: parking bay markings on crescent roads ───────────────────────────
@@ -271,9 +345,9 @@ function drawHouses() {
 }
 
 function drawBed(h) {
-  ctx.fillStyle = '#d9c9a3';
+  ctx.fillStyle = h.bedColor;
   ctx.fillRect(h.bedX, h.bedY, 6, 8);
-  ctx.fillStyle = '#f4ecd8';
+  ctx.fillStyle = '#f8f4ee';  // pillow always light
   ctx.fillRect(h.bedX, h.bedY, 6, 3);
 }
 
@@ -393,6 +467,10 @@ function buildHomes() {
           parkingY = row.crescentY + 3;
         }
 
+        // Parking heading: drv homes face south (entered from road above garden);
+        // std bay homes face north (nosed in from crescent below house).
+        const parkingHeading = variant === 'drv' ? 'S' : 'N';
+
         homes.push({
           id, rowIdx: ri, bldgInRow: bi, half, variant,
           houseRect: { hx, hy, hw: 18, hh: 18 },
@@ -400,13 +478,48 @@ function buildHomes() {
           gate,
           doorX, doorY,
           bedX, bedY,
-          parkingX, parkingY,
-          color: PALETTE[id % PALETTE.length],
+          parkingX, parkingY, parkingHeading,
+          color:    PALETTE[id % PALETTE.length],
+          bedColor: BED_PALETTE[id % BED_PALETTE.length],
         });
         id++;
       }
     }
   }
+}
+
+// ── Geometry helpers ──────────────────────────────────────────────────────
+function distToRoads(x, y) {
+  let min = Infinity;
+  for (const r of ROAD_RECTS) {
+    const cx = Math.max(r.x, Math.min(x, r.x + r.w));
+    const cy = Math.max(r.y, Math.min(y, r.y + r.h));
+    const d = Math.hypot(x - cx, y - cy);
+    if (d < min) min = d;
+  }
+  return min;
+}
+function isInPublicArea(x, y) {
+  for (const r of PUBLIC_WALK_RECTS)
+    if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) return true;
+  return false;
+}
+function isInTrackZone(x, y) {
+  for (const z of TRACK_ZONES)
+    if (x >= z.x && x < z.x + z.w && y >= z.y && y < z.y + z.h) return true;
+  return false;
+}
+// Convert arbitrary waypoint list into axis-aligned segments (H-first)
+function makeAxisAligned(startX, startY, waypoints) {
+  const out = [];
+  let cx = startX, cy = startY;
+  for (const wp of waypoints) {
+    if (Math.abs(wp.x - cx) > 0.5 && Math.abs(wp.y - cy) > 0.5)
+      out.push({ x: wp.x, y: cy });  // horizontal leg first
+    out.push({ x: wp.x, y: wp.y });
+    cx = wp.x; cy = wp.y;
+  }
+  return out;
 }
 
 // ── Step 4a: Street waypoint graph ────────────────────────────────────────
@@ -420,8 +533,8 @@ function buildStreetNodes() {
     PED_NODES.push(n);
     ALL_NODES.push(n);
   }
-  // East exit — ped + car (beyond X=270, up to 5 extra nodes)
-  for (let x = TW + GRID; x <= TW + 5 * GRID; x += GRID) {
+  // East exit — ped + car, extended to X=900 for longer drives
+  for (let x = TW + GRID; x <= 900; x += GRID) {
     const n = { x, y: MAIN_CY };
     PED_NODES.push(n);
     ALL_NODES.push(n);
@@ -440,6 +553,18 @@ function buildStreetNodes() {
   for (let y = MAIN_CY; y <= CRES3_CY + GRID; y += GRID) ALL_NODES.push({ x: WPERIM_CX, y });
   // East perimeter
   for (let y = MAIN_CY; y <= CRES3_CY + GRID; y += GRID) ALL_NODES.push({ x: EPERIM_CX, y });
+
+  // Grass PED_NODES — any grid point within GRASS_RADIUS of a road, not inside a building/track
+  for (let gx = 0; gx <= TW + 10 * GRID; gx += GRID) {
+    for (let gy = 0; gy <= H; gy += GRID) {
+      if (isInTrackZone(gx, gy)) continue;
+      const onResBldg = BUILDING_BOXES.some(b => gx >= b.x && gx < b.x + b.w && gy >= b.y && gy < b.y + b.h);
+      const onBakBldg = gx >= BAK_BLDG_X && gx < BAK_BLDG_X + BAK_BLDG_W && gy >= BAK_BLDG_Y && gy < BAK_BLDG_Y + BAK_BLDG_H;
+      if (onResBldg || onBakBldg) continue;
+      if (distToRoads(gx, gy) <= GRASS_RADIUS || isInPublicArea(gx, gy))
+        PED_NODES.push({ x: gx, y: gy });
+    }
+  }
 }
 
 function nearestNode(x, y, nodes) {
@@ -453,6 +578,9 @@ function nearestNode(x, y, nodes) {
 
 // Check if a point is inside a foreign building/garden (not own home's building)
 function insideForeignBuilding(x, y, homeId) {
+  // Bakery building interior — nobody lives there, all residents are blocked
+  if (x >= BAK_BLDG_X && x < BAK_BLDG_X + BAK_BLDG_W &&
+      y >= BAK_BLDG_Y && y < BAK_BLDG_Y + BAK_BLDG_H) return true;
   const h = homes[homeId];
   for (const box of BUILDING_BOXES) {
     if (box.bldgKey === `${h.rowIdx}_${h.bldgInRow}`) continue; // own building
@@ -482,26 +610,35 @@ function randomCarNode() {
 }
 
 // ── Step 4b: Drive path builders ──────────────────────────────────────────
+// Road immediately above each row's garden (the road cars exit from for drv homes)
+// and the crescent below for std homes.
+function exitRoadCY(h) {
+  if (h.variant === 'drv')
+    return h.rowIdx === 0 ? MAIN_CY : h.rowIdx === 1 ? CRES1_CY : CRES2_CY;
+  return h.rowIdx === 0 ? CRES1_CY : h.rowIdx === 1 ? CRES2_CY : CRES3_CY;
+}
 function buildDrivePath(p) {
   const h   = homes[p.homeId];
-  const rowCY = h.rowIdx === 0 ? CRES1_CY : h.rowIdx === 1 ? CRES2_CY : CRES3_CY;
-  const path = [
-    { x: SPINE_CX, y: rowCY },    // drive to spine on crescent
-    { x: SPINE_CX, y: MAIN_CY },  // up spine to main street
+  const roadCY = exitRoadCY(h);
+  const raw = [
+    { x: h.parkingX + 9, y: roadCY },  // exit straight onto road above/below parking
+    { x: SPINE_CX,       y: roadCY },  // across to spine
+    { x: SPINE_CX,       y: MAIN_CY }, // up/down spine to main street
   ];
-  const extra = 1 + Math.floor(Math.random() * 3);
-  for (let i = 0; i < extra; i++) path.push(randomCarNode());
-  return path;
+  const extra = 2 + Math.floor(Math.random() * 4);  // 2–5 roaming waypoints
+  for (let i = 0; i < extra; i++) raw.push(randomCarNode());
+  return makeAxisAligned(p.car.x, p.car.y, raw);
 }
 function buildReturnDrivePath(p, destX, destY) {
-  const h   = homes[p.homeId];
-  const rowCY = h.rowIdx === 0 ? CRES1_CY : h.rowIdx === 1 ? CRES2_CY : CRES3_CY;
-  return [
-    { x: SPINE_CX, y: MAIN_CY },
-    { x: SPINE_CX, y: rowCY },
-    { x: destX,    y: rowCY },
-    { x: destX,    y: destY },
+  const h      = homes[p.homeId];
+  const roadCY = exitRoadCY(h);
+  const raw = [
+    { x: SPINE_CX, y: MAIN_CY },  // return to spine at main street
+    { x: SPINE_CX, y: roadCY },   // down/up spine to approach road
+    { x: destX,    y: roadCY },   // along road to parking column
+    { x: destX,    y: destY },    // into parking spot
   ];
+  return makeAxisAligned(p.car.x, p.car.y, raw);
 }
 
 // ── Step 5: buildPeople() ─────────────────────────────────────────────────
@@ -516,7 +653,7 @@ function buildPeople() {
       state: 'AT_HOME', stateTimer: 0,
       path: [],
       paceIdx: 0,                    // index into PACE waypoint list
-      car: { x: h.parkingX + 9, y: h.parkingY + 6, parked: true, heading: 'E', speed: CAR_SPEED },
+      car: { x: h.parkingX + 9, y: h.parkingY + 6, parked: true, heading: h.parkingHeading, speed: CAR_SPEED },
       skin: { headColor: '#f4c2a1', shirtColor: h.color, carColor: h.color },
       legFrame: 0, frameTimer: 0,
       visible: true,
@@ -563,9 +700,9 @@ function updatePerson(p, dt) {
     case 'AT_HOME': {
       // Keep inside room
       p.x = h.houseRect.hx + 9; p.y = h.houseRect.hy + 9;
-      if (Math.random() < 0.005)  { startExit(p, h); break; }
-      if (Math.random() < 0.001)  { startPace(p, h); break; }
-      if (Math.random() < 0.0005) { startSleep(p, h); }
+      if (Math.random() < 0.003)  { startExit(p, h); break; }   // 0.3% — leave house
+      if (Math.random() < 0.004)  { startPace(p, h); break; }   // 0.4% — pace indoors
+      if (Math.random() < 0.0015) { startSleep(p, h); }          // 0.15% — go to sleep
       break;
     }
 
@@ -602,7 +739,7 @@ function updatePerson(p, dt) {
 
     case 'WANDER': {
       if (p.path.length === 0) {
-        if (Math.random() < 0.008) { startReturn(p, h); break; }
+        if (Math.random() < 0.015) { startReturn(p, h); break; }  // 1.5% — head home
         p.path = [randomPedNode(p.homeId)];
       } else {
         const wp = p.path[0];
@@ -676,7 +813,7 @@ function updatePerson(p, dt) {
 
     case 'PARK_CAR': {
       if (p.path.length === 0) {
-        p.car.parked = true; p.car.heading = 'N';
+        p.car.parked = true; p.car.heading = h.parkingHeading;
         p.car.x = h.parkingX + 9; p.car.y = h.parkingY + 6;
         p.x = h.parkingX + 9; p.y = h.parkingY + 6;
         p.visible = true;
@@ -698,20 +835,20 @@ function updatePerson(p, dt) {
 function startExit(p, h) {
   p.state = 'EXIT_HOUSE';
   const gx = h.gate.x + 2, gy = h.gate.y + 1;
+  // Road that sits directly above this row's garden (gate faces onto it)
+  const roadAboveY = h.rowIdx === 0 ? MAIN_CY : h.rowIdx === 1 ? CRES1_CY : CRES2_CY;
   p.path = [
     { x: h.doorX + 1, y: h.doorY + 2 },
     { x: gx, y: gy },
-    { x: gx, y: MAIN_CY },
+    { x: gx, y: roadAboveY },
   ];
 }
 
 function startReturn(p, h) {
   p.state = 'RETURN';
   const gx = h.gate.x + 2, gy = h.gate.y + 1;
-  const street = safePedNode(p.x, p.y, p.homeId);
+  // Walk directly to gate then door — works from road, grass, or crescent
   p.path = [
-    { x: street.x, y: street.y },
-    { x: gx, y: MAIN_CY },
     { x: gx, y: gy },
     { x: h.doorX + 1, y: h.doorY + 2 },
   ];
