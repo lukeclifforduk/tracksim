@@ -438,7 +438,8 @@ function drawPeople() {
   for (const p of people) {
     if (!p.visible) continue;
     const walking = ['EXIT_HOUSE','WANDER','RETURN','PACE'].includes(p.state);
-    drawPersonSprite(p.x, p.y, p.skin, walking && p.legFrame, p.state === 'SLEEPING');
+    // Cycle: WALK(0) → WALK(1) → BASE(2) → repeat; feet-together appears 1-in-3
+    drawPersonSprite(p.x, p.y, p.skin, walking && p.legFrame !== 2, p.state === 'SLEEPING');
     if (p.state === 'INTERACT') {
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(Math.floor(p.x-1), Math.floor(p.y-8), 2, 2);
@@ -927,7 +928,7 @@ function updatePerson(p, dt) {
 
   // Leg animation: toggle every 4px traveled — stable, speed-independent
   p.moveDist += Math.hypot(p.x - px0, p.y - py0);
-  if (p.moveDist >= 4) { p.legFrame ^= 1; p.moveDist -= 4; }
+  if (p.moveDist >= 4) { p.legFrame = (p.legFrame + 1) % 3; p.moveDist -= 4; }
 }
 
 // ── State transition helpers ───────────────────────────────────────────────
