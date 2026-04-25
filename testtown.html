@@ -322,30 +322,40 @@ function drawPublicArea() {
 }
 
 // ── Draw: gardens, fences and houses for all 30 homes ─────────────────────
+// Homes come in pairs (half=0, half=1) sharing a building.
+// We draw gardens per-home (both share same gardenRect so drawn twice — second pass
+// just repaints same area, harmless). Houses are drawn once per building pair.
 function drawHomesLayout() {
+  const drawn = new Set();
   for (const h of homes) {
     drawGarden(h);
-    drawHouse(h);
+    // Draw house shell only once per building (when half===0)
+    const bKey = `${h.rowIdx}_${h.bldgInRow}`;
+    if (!drawn.has(bKey)) {
+      drawn.add(bKey);
+      drawHouseShell(h);
+    }
+    // Draw per-half interior (room tint + bed + door) for this specific home
+    const person = people[h.id];
+    const sleeping = person && person.state === 'SLEEPING';
+    drawHalfInterior(h, sleeping);
   }
 }
 
 function drawGarden(h) {
-  // Garden fill
   ctx.fillStyle = '#3ca067';
   ctx.fillRect(h.gardenRect.x, h.gardenRect.y, h.gardenRect.w, h.gardenRect.h);
-  // Fence perimeter (2px)
   ctx.strokeStyle = '#8b6f47';
   ctx.lineWidth = 2;
   ctx.strokeRect(h.gardenRect.x, h.gardenRect.y, h.gardenRect.w, h.gardenRect.h);
-  // Gate: 4px gap on fence facing street
-  ctx.fillStyle = '#2e8b57'; // erase fence segment with grass to show gate
+  // Gate: paint over fence with grass colour
   const g = h.gate;
+  ctx.fillStyle = '#2e8b57';
   ctx.fillRect(g.x, g.y, g.w, g.h);
 }
 
-function drawHouse(h) {
+function drawHouseShell(h) {
   const { hx, hy, hw, hh } = h.houseRect;
-  // Walls
   ctx.fillStyle = '#a0856a';
   ctx.fillRect(hx, hy, hw, hh);
   ctx.strokeStyle = '#5a4a36';
@@ -354,26 +364,32 @@ function drawHouse(h) {
   // Roof strip
   ctx.fillStyle = '#c4956a';
   ctx.fillRect(hx, hy, hw, 3);
-  // Door gap (2px wide, bottom of house)
-  ctx.fillStyle = '#7a4a28';
-  ctx.fillRect(h.doorX, hy + hh - 5, 3, 5);
-  // Divider line between the two semis
+  // Divider between semis
   ctx.strokeStyle = '#5a4a36';
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(hx + hw / 2, hy);
   ctx.lineTo(hx + hw / 2, hy + hh);
   ctx.stroke();
-  // Beds (one per half)
-  drawBed(hx + 2, hy + 2);
-  drawBed(hx + hw / 2 + 2, hy + 2);
+}
+
+function drawHalfInterior(h, sleeping) {
+  const { hx, hy, hw, hh } = h.houseRect;
+  const halfW = hw / 2;
+  const rx = hx + h.half * halfW;
+  // Room wall tint (darker if sleeping)
+  ctx.fillStyle = sleeping ? '#705d4a' : '#a0856a';
+  ctx.fillRect(rx + 1, hy + 3, halfW - 2, hh - 4);
+  // Bed
+  drawBed(rx + 2, hy + 4, false);
+  // Door
+  ctx.fillStyle = '#7a4a28';
+  ctx.fillRect(h.doorX, hy + hh - 5, 3, 5);
 }
 
 function drawBed(bx, by) {
-  // Mattress
   ctx.fillStyle = '#d9c9a3';
   ctx.fillRect(bx, by, 6, 8);
-  // Pillow
   ctx.fillStyle = '#f4ecd8';
   ctx.fillRect(bx, by, 6, 3);
 }
@@ -433,21 +449,6 @@ function drawCarSprite(cx, cy, heading, carColor) {
   }
 }
 
-// ── Draw: parked and moving cars ───────────────────────────────────────────
-function drawCars() {
-  for (const p of people) {
-    if (p.car.parked) {
-      drawCarSprite(p.car.x, p.car.y, p.car.heading, p.skin.carColor);
-    }
-  }
-  // Moving cars (state DRIVE) drawn after people
-  for (const p of people) {
-    if (!p.car.parked && !p.visible) {
-      drawCarSprite(p.car.x, p.car.y, p.car.heading, p.skin.carColor);
-    }
-  }
-}
-
 // ── Draw: all visible people ───────────────────────────────────────────────
 function drawPeople() {
   for (const p of people) {
@@ -464,14 +465,31 @@ function drawPeople() {
   }
 }
 
-// ── Main draw ──────────────────────────────────────────────────────────────
+// ── Draw: parked cars only ─────────────────────────────────────────────────
+function drawParkedCars() {
+  for (const p of people) {
+    if (p.car.parked) drawCarSprite(p.car.x, p.car.y, p.car.heading, p.skin.carColor);
+  }
+}
+
+// ── Draw: moving cars only ─────────────────────────────────────────────────
+function drawMovingCars() {
+  for (const p of people) {
+    if (!p.car.parked) drawCarSprite(p.car.x, p.car.y, p.car.heading, p.skin.carColor);
+  }
+}
+
+// ── Main draw — order per spec ─────────────────────────────────────────────
+// 1 Grass  2 Roads  3 Public area  4 Gardens+fences  5 Houses
+// 6 Parked cars  7 People  8 Moving cars
 function draw() {
   drawGrass();
   drawRoads();
   drawPublicArea();
   drawHomesLayout();
-  drawCars();
+  drawParkedCars();
   drawPeople();
+  drawMovingCars();
 }
 
 // ── Drive path builders ───────────────────────────────────────────────────
