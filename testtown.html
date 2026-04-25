@@ -36,9 +36,9 @@ const CRES3_Y = CRES2_Y + 54;  // 732 — Crescent 3 (south loop, = H-18 = canva
 
 // Road X coordinates (left edge of each 18px road strip)
 const WPERIM_X = 0;    // West perimeter
-const SPINE_X  = 126;  // Central spine (also right edge of bakery block)
+const SPINE_X  = 144;  // Central spine (moved right by 1 grid unit to align with shifted residential area)
 const EPERIM_X = 252;  // East perimeter
-const NORTH_X  = 126;  // North entry (same as spine)
+const NORTH_X  = 144;  // North entry (same as spine, moved right by 1 grid unit)
 
 // Left-hand traffic lane offset (visual only, pixels from road centre)
 const LANE = 4;
@@ -49,7 +49,7 @@ const CRES1_CY = CRES1_Y + GRID / 2;   // 633
 const CRES2_CY = CRES2_Y + GRID / 2;   // 687
 const CRES3_CY = CRES3_Y + GRID / 2;   // 741
 const WPERIM_CX = WPERIM_X + GRID / 2; //   9
-const SPINE_CX  = SPINE_X  + GRID / 2; // 135
+const SPINE_CX  = SPINE_X  + GRID / 2; // 153
 const EPERIM_CX = EPERIM_X + GRID / 2; // 261
 
 // Residential rows
@@ -59,8 +59,8 @@ const ROWS = [
   { gardenY: CRES2_Y + GRID, houseY: CRES2_Y + GRID*2, crescentY: CRES3_Y },
 ];
 
-// 6 buildings per row, bilateral symmetric about X=135
-const BLDG_XS = [18, 54, 90, 144, 180, 216];
+// 6 buildings per row, bilateral symmetric about X=144 (shifted right by 1 grid unit)
+const BLDG_XS = [36, 72, 108, 162, 198, 234];
 // Per-row variant arrays; positions 0&5 always 'drv', 1-4 random
 // drv = driveway parking, std = road bay parking
 let ROW_VARIANTS = [];
@@ -204,7 +204,7 @@ function drawGrass() {
 
 // ── Draw: all roads ────────────────────────────────────────────────────────
 function drawRoads() {
-  // North entry (X=126-144, Y=0-448)
+  // North entry (X=144-162, Y=0-448)
   road(NORTH_X, 0, GRID, MAIN_Y, SPINE_CX, 0, SPINE_CX, MAIN_Y);
   // Main E-W street (full width + east exit to canvas edge)
   road(TX, MAIN_Y, W, GRID, TX, MAIN_CY, W, MAIN_CY);
@@ -212,7 +212,7 @@ function drawRoads() {
   road(WPERIM_X, MAIN_Y, GRID, CRES3_Y + GRID - MAIN_Y, WPERIM_CX, MAIN_Y, WPERIM_CX, CRES3_Y + GRID);
   // East perimeter (X=252-270, Y=448-628)
   road(EPERIM_X, MAIN_Y, GRID, CRES3_Y + GRID - MAIN_Y, EPERIM_CX, MAIN_Y, EPERIM_CX, CRES3_Y + GRID);
-  // Central spine (X=126-144, Y=448-628)
+  // Central spine (X=144-162, Y=448-628)
   road(SPINE_X, MAIN_Y, GRID, CRES3_Y + GRID - MAIN_Y, SPINE_CX, MAIN_Y, SPINE_CX, CRES3_Y + GRID);
   // Crescent 1 (full width, Y=502-520)
   road(TX, CRES1_Y, TW, GRID, TX, CRES1_CY, TX + TW, CRES1_CY);
@@ -900,7 +900,8 @@ function pathClearForPed(x1, y1, x2, y2, homeId) {
     if (box.bldgKey === `${h.rowIdx}_${h.bldgInRow}`) continue;
     if (segCrossesBox(x1, y1, x2, y2, box.x, box.y, box.w, box.h)) return false;
   }
-  return !segCrossesBox(x1, y1, x2, y2, BAK_BLDG_X, BAK_BLDG_Y, BAK_BLDG_W, BAK_BLDG_H);
+  // Bakery is also forbidden (fixed footprint)
+  return !segCrossesBox(x1, y1, x2, y2, BK_FULL_X, BK_FULL_Y, BK_FULL_W, BK_FULL_H);
 }
 
 function randomPedNode(homeId, fromX, fromY) {
@@ -1197,7 +1198,7 @@ function startReturn(p, h) {
 
   // Each segment of this path stays on a safe corridor:
   //  current → spine@nearRoad : nearly-horizontal, within road zone
-  //  spine@nearRoad → spine@roadAboveY : vertical on spine (X=135, no buildings)
+  //  spine@nearRoad → spine@roadAboveY : vertical on spine (X=144, no buildings)
   //  spine@roadAboveY → gx@roadAboveY  : horizontal on access road
   //  gx@roadAboveY → gate              : short step into garden
   //  gate → door
