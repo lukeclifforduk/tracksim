@@ -203,8 +203,36 @@ function buildHomes() {
   }
 }
 
-// ── People array (built in Step 4) ────────────────────────────────────────
-function buildPeople() { people = []; /* populated in step 4 */ }
+// ── People array ───────────────────────────────────────────────────────────
+function buildPeople() {
+  people = [];
+  for (const h of homes) {
+    // Spawn inside house, left half gets left side, right half gets right side
+    const spawnX = h.houseRect.hx + (h.half === 0 ? h.houseRect.hw / 4 : 3 * h.houseRect.hw / 4);
+    const spawnY = h.houseRect.hy + 6;
+    people.push({
+      id: h.id,
+      homeId: h.id,
+      x: Math.floor(spawnX),
+      y: Math.floor(spawnY),
+      state: 'AT_HOME',
+      stateTimer: 0,
+      target: null,
+      path: [],
+      car: {
+        x: h.parkingX + 9,  // centre of parking spot
+        y: h.parkingY + 6,
+        parked: true,
+        heading: 'E',
+      },
+      skin: { headColor: '#f4c2a1', shirtColor: h.color, carColor: h.color },
+      legFrame: 0,
+      frameTimer: 0,
+      visible: true,        // false while riding car
+      interactPartner: null,
+    });
+  }
+}
 
 // ── Draw helpers ───────────────────────────────────────────────────────────
 function dashedCentreLine(x1, y1, x2, y2) {
@@ -294,30 +322,40 @@ function drawPublicArea() {
 }
 
 // ── Draw: gardens, fences and houses for all 30 homes ─────────────────────
+// Homes come in pairs (half=0, half=1) sharing a building.
+// We draw gardens per-home (both share same gardenRect so drawn twice — second pass
+// just repaints same area, harmless). Houses are drawn once per building pair.
 function drawHomesLayout() {
+  const drawn = new Set();
   for (const h of homes) {
     drawGarden(h);
-    drawHouse(h);
+    // Draw house shell only once per building (when half===0)
+    const bKey = `${h.rowIdx}_${h.bldgInRow}`;
+    if (!drawn.has(bKey)) {
+      drawn.add(bKey);
+      drawHouseShell(h);
+    }
+    // Draw per-half interior (room tint + bed + door) for this specific home
+    const person = people[h.id];
+    const sleeping = person && person.state === 'SLEEPING';
+    drawHalfInterior(h, sleeping);
   }
 }
 
 function drawGarden(h) {
-  // Garden fill
   ctx.fillStyle = '#3ca067';
   ctx.fillRect(h.gardenRect.x, h.gardenRect.y, h.gardenRect.w, h.gardenRect.h);
-  // Fence perimeter (2px)
   ctx.strokeStyle = '#8b6f47';
   ctx.lineWidth = 2;
   ctx.strokeRect(h.gardenRect.x, h.gardenRect.y, h.gardenRect.w, h.gardenRect.h);
-  // Gate: 4px gap on fence facing street
-  ctx.fillStyle = '#2e8b57'; // erase fence segment with grass to show gate
+  // Gate: paint over fence with grass colour
   const g = h.gate;
+  ctx.fillStyle = '#2e8b57';
   ctx.fillRect(g.x, g.y, g.w, g.h);
 }
 
-function drawHouse(h) {
+function drawHouseShell(h) {
   const { hx, hy, hw, hh } = h.houseRect;
-  // Walls
   ctx.fillStyle = '#a0856a';
   ctx.fillRect(hx, hy, hw, hh);
   ctx.strokeStyle = '#5a4a36';
@@ -326,48 +364,449 @@ function drawHouse(h) {
   // Roof strip
   ctx.fillStyle = '#c4956a';
   ctx.fillRect(hx, hy, hw, 3);
-  // Door gap (2px wide, bottom of house)
-  ctx.fillStyle = '#7a4a28';
-  ctx.fillRect(h.doorX, hy + hh - 5, 3, 5);
-  // Divider line between the two semis
+  // Divider between semis
   ctx.strokeStyle = '#5a4a36';
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(hx + hw / 2, hy);
   ctx.lineTo(hx + hw / 2, hy + hh);
   ctx.stroke();
-  // Beds (one per half)
-  drawBed(hx + 2, hy + 2);
-  drawBed(hx + hw / 2 + 2, hy + 2);
+}
+
+function drawHalfInterior(h, sleeping) {
+  const { hx, hy, hw, hh } = h.houseRect;
+  const halfW = hw / 2;
+  const rx = hx + h.half * halfW;
+  // Room wall tint (darker if sleeping)
+  ctx.fillStyle = sleeping ? '#705d4a' : '#a0856a';
+  ctx.fillRect(rx + 1, hy + 3, halfW - 2, hh - 4);
+  // Bed
+  drawBed(rx + 2, hy + 4, false);
+  // Door
+  ctx.fillStyle = '#7a4a28';
+  ctx.fillRect(h.doorX, hy + hh - 5, 3, 5);
 }
 
 function drawBed(bx, by) {
-  // Mattress
   ctx.fillStyle = '#d9c9a3';
   ctx.fillRect(bx, by, 6, 8);
-  // Pillow
   ctx.fillStyle = '#f4ecd8';
   ctx.fillRect(bx, by, 6, 3);
 }
 
-// ── Main draw ──────────────────────────────────────────────────────────────
+// ── Draw: person sprite ────────────────────────────────────────────────────
+function drawPersonSprite(px, py, skin, walking, sleeping) {
+  const sprite = walking ? PERSON_WALK : PERSON_BASE;
+  const drawX  = Math.floor(px - 2);   // sprite is 5px wide, centre at px
+  const drawY  = Math.floor(py - 4);   // sprite is 9px tall, centre at py
+  const dim    = sleeping ? 0.7 : 1.0;
+
+  function dimColor(hex) {
+    const r = parseInt(hex.slice(1,3), 16);
+    const g = parseInt(hex.slice(3,5), 16);
+    const b = parseInt(hex.slice(5,7), 16);
+    return `rgb(${Math.floor(r*dim)},${Math.floor(g*dim)},${Math.floor(b*dim)})`;
+  }
+
+  const colorMap = {
+    P: dimColor(skin.headColor),
+    S: dimColor(skin.shirtColor),
+    B: dimColor('#1a1a1a'),
+  };
+
+  for (let r = 0; r < sprite.length; r++) {
+    for (let c = 0; c < sprite[r].length; c++) {
+      const key = sprite[r][c];
+      if (key === '_') continue;
+      ctx.fillStyle = colorMap[key];
+      ctx.fillRect(drawX + c, drawY + r, 1, 1);
+    }
+  }
+}
+
+// ── Draw: car sprite ──────────────────────────────────────────────────────
+function drawCarSprite(cx, cy, heading, carColor) {
+  const sprite = CAR_SPRITES[heading] || CAR_SPRITES['E'];
+  const sw = sprite[0].length;
+  const sh = sprite.length;
+  const drawX = Math.floor(cx - sw / 2);
+  const drawY = Math.floor(cy - sh / 2);
+
+  const colorMap = {
+    B: carColor,
+    K: '#111111',
+    W: '#9ad6e8',
+    G: '#3a5a3a',
+  };
+
+  for (let r = 0; r < sh; r++) {
+    for (let c = 0; c < sw; c++) {
+      const key = sprite[r][c];
+      if (key === '_') continue;
+      ctx.fillStyle = colorMap[key];
+      ctx.fillRect(drawX + c, drawY + r, 1, 1);
+    }
+  }
+}
+
+// ── Draw: all visible people ───────────────────────────────────────────────
+function drawPeople() {
+  for (const p of people) {
+    if (!p.visible) continue;
+    const sleeping = p.state === 'SLEEPING';
+    const walking  = p.state === 'EXIT_HOUSE' || p.state === 'WANDER' || p.state === 'RETURN';
+    drawPersonSprite(p.x, p.y, p.skin, walking && p.legFrame, sleeping);
+
+    // Interaction dot: 2×2 px white, 3px above head
+    if (p.state === 'INTERACT') {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(Math.floor(p.x - 1), Math.floor(p.y - 8), 2, 2);
+    }
+  }
+}
+
+// ── Draw: HUD ─────────────────────────────────────────────────────────────
+let _fps = 60, _fpsTimer = 0, _fpsFrames = 0;
+function updateFps(dt) {
+  _fpsFrames++;
+  _fpsTimer += dt;
+  if (_fpsTimer >= 0.5) { _fps = Math.round(_fpsFrames / _fpsTimer); _fpsFrames = 0; _fpsTimer = 0; }
+}
+
+function drawHUD() {
+  const counts = {};
+  for (const p of people) counts[p.state] = (counts[p.state] || 0) + 1;
+  const order = ['AT_HOME','SLEEPING','EXIT_HOUSE','WANDER','INTERACT','RETURN','ENTER_CAR','DRIVE','PARK_CAR'];
+  const lines  = order.filter(s => counts[s]).map(s => `${s}: ${counts[s]}`);
+  lines.unshift(`FPS: ${_fps}`);
+
+  const pad = 6, lh = 12, fw = 140;
+  const bh  = lines.length * lh + pad * 2;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(W - fw - 4, 4, fw, bh);
+  ctx.fillStyle = '#e8e8e8';
+  ctx.font = '10px monospace';
+  lines.forEach((l, i) => ctx.fillText(l, W - fw, 4 + pad + (i + 1) * lh - 2));
+}
+
+// ── Draw: parked cars only ─────────────────────────────────────────────────
+function drawParkedCars() {
+  for (const p of people) {
+    if (p.car.parked) drawCarSprite(p.car.x, p.car.y, p.car.heading, p.skin.carColor);
+  }
+}
+
+// ── Draw: moving cars only ─────────────────────────────────────────────────
+function drawMovingCars() {
+  for (const p of people) {
+    if (!p.car.parked) drawCarSprite(p.car.x, p.car.y, p.car.heading, p.skin.carColor);
+  }
+}
+
+// ── Main draw — order per spec ─────────────────────────────────────────────
+// 1 Grass  2 Roads  3 Public area  4 Gardens+fences  5 Houses
+// 6 Parked cars  7 People  8 Moving cars  9 HUD
 function draw() {
   drawGrass();
   drawRoads();
   drawPublicArea();
   drawHomesLayout();
-  // people + cars drawn in later steps
+  drawParkedCars();
+  drawPeople();
+  drawMovingCars();
+  drawHUD();
+}
+
+// ── Drive path builders ───────────────────────────────────────────────────
+// Car navigates from parking → spine/main street → random loop → return
+function buildDrivePath(p) {
+  const hm = homes[p.homeId];
+  // Access lane Y for this row
+  const rowAY = ROWS[hm.rowIdx].parkingY + GRID / 2;
+  const startX = hm.parkingX + 9;
+
+  // Drive up to main street via spine
+  const waypoints = [
+    { x: startX, y: rowAY },
+    { x: SPINE_X, y: rowAY },
+    { x: SPINE_X, y: STREET_Y },
+  ];
+
+  // Pick 1-3 random destinations on drivable roads
+  const extra = 1 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < extra; i++) {
+    const n = randomCarNode();
+    waypoints.push({ x: n.x, y: n.y });
+  }
+  return waypoints;
+}
+
+function buildReturnDrivePath(p, destX, destY) {
+  const hm = homes[p.homeId];
+  const rowAY = ROWS[hm.rowIdx].parkingY + GRID / 2;
+  return [
+    { x: SPINE_X, y: STREET_Y },
+    { x: SPINE_X, y: rowAY },
+    { x: destX,   y: rowAY },
+    { x: destX,   y: destY },
+  ];
+}
+
+// ── Street waypoint graph ─────────────────────────────────────────────────
+// Key walkable Y rows: main street centre (466+9=475), access lanes (529, 583, 637)
+// Key X anchors: TX=18, each bldg centre, NORTH_ROAD_X=126, TX+TW=252
+const STREET_Y    = MAIN_STREET_Y + GRID / 2;  // 475
+const ACCESS_YS   = [529, 583, 637];            // centres of access-lane rows
+const SPINE_X     = NORTH_ROAD_X;              // 126
+
+// Build waypoint sets — pedestrians stay on main street/stubs, cars use all roads
+function buildWaypointSets() {
+  const ped = [], all = [];
+  // Main street nodes — both ped and car
+  for (let x = TX; x <= TX + TW; x += GRID) {
+    const n = { x, y: STREET_Y };
+    ped.push(n); all.push(n);
+  }
+  // East stub — both
+  for (let x = TX + TW + GRID; x <= TX + TW + 5 * GRID; x += GRID) {
+    const n = { x, y: STREET_Y };
+    ped.push(n); all.push(n);
+  }
+  // North road — both
+  for (let y = STREET_Y - GRID; y >= 0; y -= GRID) {
+    const n = { x: SPINE_X, y };
+    ped.push(n); all.push(n);
+  }
+  // Access lanes — cars only
+  for (const ay of ACCESS_YS) {
+    for (let x = TX; x <= TX + TW; x += GRID) {
+      all.push({ x, y: ay });
+    }
+  }
+  return { ped, all };
+}
+const { ped: PED_NODES, all: ALL_NODES } = buildWaypointSets();
+
+function nearestNode(x, y, nodes) {
+  let best = nodes[0], bestD = Infinity;
+  for (const n of nodes) {
+    const d = (n.x - x) ** 2 + (n.y - y) ** 2;
+    if (d < bestD) { bestD = d; best = n; }
+  }
+  return best;
+}
+
+function nearestStreetNode(x, y) { return nearestNode(x, y, PED_NODES); }
+function randomPedNode()  { return PED_NODES[Math.floor(Math.random() * PED_NODES.length)]; }
+function randomCarNode()  { return ALL_NODES[Math.floor(Math.random() * ALL_NODES.length)]; }
+
+// ── Movement helper ───────────────────────────────────────────────────────
+// Move (px,py) toward target at speed. Returns true when arrived.
+function stepToward(obj, targetX, targetY, speed, dt) {
+  const dx = targetX - obj.x;
+  const dy = targetY - obj.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist < speed * dt + 0.5) {
+    obj.x = targetX;
+    obj.y = targetY;
+    return true;
+  }
+  obj.x += (dx / dist) * speed * dt;
+  obj.y += (dy / dist) * speed * dt;
+  return false;
+}
+
+// ── State machine update ───────────────────────────────────────────────────
+function updatePerson(p, dt) {
+  const home = homes[p.homeId];
+
+  // Leg animation
+  p.frameTimer += dt;
+  if (p.frameTimer > 0.18) { p.legFrame ^= 1; p.frameTimer = 0; }
+
+  switch (p.state) {
+    case 'AT_HOME': {
+      // Random chance to go out
+      if (Math.random() < 0.005) {
+        p.state = 'EXIT_HOUSE';
+        // Path: inside room → gate → main street
+        const gx = home.gate.x + home.gate.w / 2;
+        const gy = home.gate.y + home.gate.h / 2;
+        p.path = [
+          { x: home.doorX + 1, y: home.doorY },
+          { x: gx, y: gy },
+          { x: gx, y: STREET_Y },
+        ];
+      }
+      break;
+    }
+
+    case 'EXIT_HOUSE': {
+      if (p.path.length === 0) {
+        // Choose: 70% walk, 30% drive
+        if (Math.random() < 0.30 && p.car.parked) {
+          p.state = 'ENTER_CAR';
+          const carHome = homes[p.homeId];
+          p.path = [{ x: carHome.parkingX + 9, y: carHome.parkingY + 6 }];
+        } else {
+          p.state = 'WANDER';
+          p.path = [randomPedNode()];
+        }
+      } else {
+        const wp = p.path[0];
+        if (stepToward(p, wp.x, wp.y, WALK_SPEED, dt)) p.path.shift();
+      }
+      break;
+    }
+
+    case 'WANDER': {
+      if (p.path.length === 0) {
+        // Small chance to return home, else pick new waypoint
+        if (Math.random() < 0.008) {
+          p.state = 'RETURN';
+          const gx = home.gate.x + home.gate.w / 2;
+          const gy = home.gate.y + home.gate.h / 2;
+          p.path = [
+            nearestStreetNode(p.x, p.y),
+            { x: gx, y: gy },
+            { x: home.doorX + 1, y: home.doorY },
+          ];
+        } else {
+          p.path = [randomPedNode()];
+        }
+      } else {
+        const wp = p.path[0];
+        if (stepToward(p, wp.x, wp.y, WALK_SPEED, dt)) p.path.shift();
+      }
+      // Proximity interaction check (5% when near another wanderer)
+      if (p.state === 'WANDER' && !p.interactPartner) {
+        for (const q of people) {
+          if (q === p || q.state !== 'WANDER' || q.interactPartner) continue;
+          const d = Math.hypot(q.x - p.x, q.y - p.y);
+          if (d < 12 && Math.random() < 0.05) {
+            const dur = 4 + Math.random() * 3;
+            p.state = 'INTERACT'; p.stateTimer = dur; p.interactPartner = q;
+            q.state = 'INTERACT'; q.stateTimer = dur; q.interactPartner = p;
+            break;
+          }
+        }
+      }
+      break;
+    }
+
+    case 'INTERACT': {
+      p.stateTimer -= dt;
+      if (p.stateTimer <= 0) {
+        p.state = 'WANDER';
+        p.interactPartner = null;
+        p.path = [randomPedNode()];
+      }
+      break;
+    }
+
+    case 'RETURN': {
+      if (p.path.length === 0) {
+        // Arrived home
+        p.x = home.doorX + 1;
+        p.y = home.houseRect.hy + 6;
+        p.state = 'AT_HOME';
+      } else {
+        const wp = p.path[0];
+        if (stepToward(p, wp.x, wp.y, WALK_SPEED, dt)) p.path.shift();
+      }
+      break;
+    }
+
+    case 'SLEEPING': {
+      p.stateTimer -= dt;
+      if (p.stateTimer <= 0) p.state = 'AT_HOME';
+      break;
+    }
+
+    case 'ENTER_CAR': {
+      // Walk person to their car spot
+      if (p.path.length === 0) {
+        // Arrived at car — hide person, start driving
+        p.visible = false;
+        p.car.parked = false;
+        p.car.x = homes[p.homeId].parkingX + 9;
+        p.car.y = homes[p.homeId].parkingY + 6;
+        // Build a simple drive loop: up to main street, E or W, optional east stub, return
+        p.state = 'DRIVE';
+        p.path = buildDrivePath(p);
+      } else {
+        const wp = p.path[0];
+        if (stepToward(p, wp.x, wp.y, WALK_SPEED, dt)) p.path.shift();
+      }
+      break;
+    }
+
+    case 'DRIVE': {
+      if (p.path.length === 0) {
+        // Return to home parking
+        p.state = 'PARK_CAR';
+        const hm = homes[p.homeId];
+        p.path = buildReturnDrivePath(p, hm.parkingX + 9, hm.parkingY + 6);
+      } else {
+        const wp = p.path[0];
+        const arrived = stepToward(p.car, wp.x, wp.y, CAR_SPEED, dt);
+        // Update heading based on direction of travel
+        const dx = wp.x - p.car.x, dy = wp.y - p.car.y;
+        if (Math.abs(dx) > Math.abs(dy)) p.car.heading = dx > 0 ? 'E' : 'W';
+        else p.car.heading = dy > 0 ? 'S' : 'N';
+        if (arrived) p.path.shift();
+      }
+      break;
+    }
+
+    case 'PARK_CAR': {
+      if (p.path.length === 0) {
+        // Parked
+        const hm = homes[p.homeId];
+        p.car.x = hm.parkingX + 9;
+        p.car.y = hm.parkingY + 6;
+        p.car.parked = true;
+        p.car.heading = 'E';
+        // Person reappears at parking spot and walks inside
+        const gx = hm.gate.x + hm.gate.w / 2;
+        const gy = hm.gate.y + hm.gate.h / 2;
+        p.x = hm.parkingX + 9;
+        p.y = hm.parkingY + 6;
+        p.visible = true;
+        p.state = 'RETURN';
+        p.path = [
+          { x: gx, y: gy },
+          { x: hm.doorX + 1, y: hm.doorY },
+        ];
+      } else {
+        const wp = p.path[0];
+        const arrived = stepToward(p.car, wp.x, wp.y, CAR_SPEED, dt);
+        const dx = wp.x - p.car.x, dy = wp.y - p.car.y;
+        if (Math.abs(dx) > Math.abs(dy)) p.car.heading = dx > 0 ? 'E' : 'W';
+        else p.car.heading = dy > 0 ? 'S' : 'N';
+        if (arrived) p.path.shift();
+      }
+      break;
+    }
+  }
+
+  // Rare sleep roll while AT_HOME
+  if (p.state === 'AT_HOME' && Math.random() < 0.0005) {
+    p.state = 'SLEEPING';
+    p.stateTimer = 8 + Math.random() * 12;
+  }
 }
 
 // ── Update ────────────────────────────────────────────────────────────────
 function update(dt) {
-  // state machine ticks go here
+  for (const p of people) updatePerson(p, dt);
 }
 
 // ── Animation loop ────────────────────────────────────────────────────────
 function animate(ts) {
   const dt = lastT === null ? 0 : Math.min((ts - lastT) / 1000, 0.1);
   lastT = ts;
+  updateFps(dt);
   update(dt);
   draw();
   requestAnimationFrame(animate);
