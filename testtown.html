@@ -354,7 +354,7 @@ function drawBed(h) {
 // ── Draw: person sprite ────────────────────────────────────────────────────
 function drawPersonSprite(px, py, skin, walking, sleeping) {
   const sprite = walking ? PERSON_WALK : PERSON_BASE;
-  const drawX = Math.floor(px - 2), drawY = Math.floor(py - 4);
+  const drawX = Math.round(px - 2), drawY = Math.round(py - 4);
   const dim = sleeping ? 0.7 : 1.0;
   function dc(hex) {
     const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
@@ -626,7 +626,10 @@ function buildDrivePath(p) {
     { x: SPINE_CX,       y: MAIN_CY }, // up/down spine to main street
   ];
   const extra = 2 + Math.floor(Math.random() * 4);  // 2–5 roaming waypoints
-  for (let i = 0; i < extra; i++) raw.push(randomCarNode());
+  for (let i = 0; i < extra; i++) {
+    // Only roam on main street — ensures all axis-aligned legs stay on valid roads
+    raw.push({ x: Math.round(Math.random() * (900 / GRID)) * GRID, y: MAIN_CY });
+  }
   return makeAxisAligned(p.car.x, p.car.y, raw);
 }
 function buildReturnDrivePath(p, destX, destY) {
@@ -655,7 +658,8 @@ function buildPeople() {
       paceIdx: 0,                    // index into PACE waypoint list
       car: { x: h.parkingX + 9, y: h.parkingY + 6, parked: true, heading: h.parkingHeading, speed: CAR_SPEED },
       skin: { headColor: '#f4c2a1', shirtColor: h.color, carColor: h.color },
-      legFrame: 0, frameTimer: 0,
+      legFrame: 0, moveDist: 0,
+      tiredness: 0, tirednessTimer: 0, sleepOnReturn: false,
       visible: true,
       interactPartner: null,
       interactCooldown: 0,
@@ -680,7 +684,7 @@ function carEffectiveSpeed(car) {
     if (['AT_HOME','SLEEPING','PACE'].includes(p.state)) continue;
     const d = Math.hypot(p.x - car.x, p.y - car.y);
     if (d < 9)  return 0;
-    if (d < 18) return CAR_SPEED * 0.4;
+    if (d < 18) return CAR_SPEED * 0.15;
   }
   return CAR_SPEED;
 }
@@ -691,9 +695,21 @@ function updatePerson(p, dt) {
   // Cooldown tick
   if (p.interactCooldown > 0) p.interactCooldown = Math.max(0, p.interactCooldown - dt);
 
-  // Leg animation
-  p.frameTimer += dt;
-  if (p.frameTimer > 0.18) { p.legFrame ^= 1; p.frameTimer = 0; }
+  // Tiredness — accumulates each second while not at home/asleep; forces return at 100
+  if (p.state !== 'AT_HOME' && p.state !== 'SLEEPING') {
+    p.tirednessTimer += dt;
+    if (p.tirednessTimer >= 1.0) {
+      p.tirednessTimer -= 1.0;
+      p.tiredness = Math.min(100, p.tiredness + 1 + Math.floor(Math.random() * 2)); // 1 or 2/s
+    }
+    if (p.tiredness >= 100 && !p.sleepOnReturn) {
+      p.sleepOnReturn = true;
+      if (p.state === 'WANDER') startReturn(p, h);
+    }
+  }
+
+  // Snapshot position before state tick (for distance-based leg animation below)
+  const px0 = p.x, py0 = p.y;
 
   switch (p.state) {
 
@@ -723,7 +739,7 @@ function updatePerson(p, dt) {
 
     case 'EXIT_HOUSE': {
       if (p.path.length === 0) {
-        if (Math.random() < 0.30 && p.car.parked) {
+        if (Math.random() < 0.40 && p.car.parked) {
           p.state = 'ENTER_CAR';
           p.path  = [{ x: h.parkingX + 9, y: h.parkingY + 6 }];
         } else {
@@ -739,7 +755,7 @@ function updatePerson(p, dt) {
 
     case 'WANDER': {
       if (p.path.length === 0) {
-        if (Math.random() < 0.015) { startReturn(p, h); break; }  // 1.5% — head home
+        if (Math.random() < 0.02) { startReturn(p, h); break; }  // 2% — head home
         p.path = [randomPedNode(p.homeId)];
       } else {
         const wp = p.path[0];
@@ -749,7 +765,7 @@ function updatePerson(p, dt) {
       if (p.state === 'WANDER' && !p.interactPartner && p.interactCooldown === 0) {
         for (const q of people) {
           if (q === p || q.state !== 'WANDER' || q.interactPartner || q.interactCooldown > 0) continue;
-          if (Math.hypot(q.x - p.x, q.y - p.y) < 12 && Math.random() < 0.005) {
+          if (Math.hypot(q.x - p.x, q.y - p.y) < 12 && Math.random() < 0.007) {
             const dur = 4 + Math.random() * 3;
             p.state = 'INTERACT'; p.stateTimer = dur; p.interactPartner = q;
             q.state = 'INTERACT'; q.stateTimer = dur; q.interactPartner = p;
@@ -774,7 +790,8 @@ function updatePerson(p, dt) {
     case 'RETURN': {
       if (p.path.length === 0) {
         p.x = h.houseRect.hx + 9; p.y = h.houseRect.hy + 9;
-        p.state = 'AT_HOME';
+        if (p.sleepOnReturn) { p.sleepOnReturn = false; startSleep(p, h); }
+        else p.state = 'AT_HOME';
       } else {
         const wp = p.path[0];
         if (stepToward(p, wp.x, wp.y, WALK_SPEED, dt)) p.path.shift();
@@ -829,6 +846,10 @@ function updatePerson(p, dt) {
       break;
     }
   }
+
+  // Leg animation: toggle every 4px traveled — stable, speed-independent
+  p.moveDist += Math.hypot(p.x - px0, p.y - py0);
+  if (p.moveDist >= 4) { p.legFrame ^= 1; p.moveDist -= 4; }
 }
 
 // ── State transition helpers ───────────────────────────────────────────────
@@ -857,6 +878,8 @@ function startReturn(p, h) {
 function startSleep(p, h) {
   p.state = 'SLEEPING';
   p.stateTimer = 8 + Math.random() * 12;
+  p.tiredness = 0;
+  p.tirednessTimer = 0;
 }
 
 function startPace(p, h) {
