@@ -465,6 +465,30 @@ function drawPeople() {
   }
 }
 
+// ── Draw: HUD ─────────────────────────────────────────────────────────────
+let _fps = 60, _fpsTimer = 0, _fpsFrames = 0;
+function updateFps(dt) {
+  _fpsFrames++;
+  _fpsTimer += dt;
+  if (_fpsTimer >= 0.5) { _fps = Math.round(_fpsFrames / _fpsTimer); _fpsFrames = 0; _fpsTimer = 0; }
+}
+
+function drawHUD() {
+  const counts = {};
+  for (const p of people) counts[p.state] = (counts[p.state] || 0) + 1;
+  const order = ['AT_HOME','SLEEPING','EXIT_HOUSE','WANDER','INTERACT','RETURN','ENTER_CAR','DRIVE','PARK_CAR'];
+  const lines  = order.filter(s => counts[s]).map(s => `${s}: ${counts[s]}`);
+  lines.unshift(`FPS: ${_fps}`);
+
+  const pad = 6, lh = 12, fw = 140;
+  const bh  = lines.length * lh + pad * 2;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(W - fw - 4, 4, fw, bh);
+  ctx.fillStyle = '#e8e8e8';
+  ctx.font = '10px monospace';
+  lines.forEach((l, i) => ctx.fillText(l, W - fw, 4 + pad + (i + 1) * lh - 2));
+}
+
 // ── Draw: parked cars only ─────────────────────────────────────────────────
 function drawParkedCars() {
   for (const p of people) {
@@ -481,7 +505,7 @@ function drawMovingCars() {
 
 // ── Main draw — order per spec ─────────────────────────────────────────────
 // 1 Grass  2 Roads  3 Public area  4 Gardens+fences  5 Houses
-// 6 Parked cars  7 People  8 Moving cars
+// 6 Parked cars  7 People  8 Moving cars  9 HUD
 function draw() {
   drawGrass();
   drawRoads();
@@ -490,6 +514,7 @@ function draw() {
   drawParkedCars();
   drawPeople();
   drawMovingCars();
+  drawHUD();
 }
 
 // ── Drive path builders ───────────────────────────────────────────────────
@@ -507,11 +532,11 @@ function buildDrivePath(p) {
     { x: SPINE_X, y: STREET_Y },
   ];
 
-  // Pick 1-3 random destinations on main street / east stub
+  // Pick 1-3 random destinations on drivable roads
   const extra = 1 + Math.floor(Math.random() * 3);
   for (let i = 0; i < extra; i++) {
-    const n = randomStreetNode();
-    waypoints.push({ x: n.x, y: STREET_Y });
+    const n = randomCarNode();
+    waypoints.push({ x: n.x, y: n.y });
   }
   return waypoints;
 }
@@ -534,50 +559,46 @@ const STREET_Y    = MAIN_STREET_Y + GRID / 2;  // 475
 const ACCESS_YS   = [529, 583, 637];            // centres of access-lane rows
 const SPINE_X     = NORTH_ROAD_X;              // 126
 
-// Build a flat list of named street nodes
-function buildStreetNodes() {
-  const nodes = [];
-  // Main street: one node every GRID along the full width
+// Build waypoint sets — pedestrians stay on main street/stubs, cars use all roads
+function buildWaypointSets() {
+  const ped = [], all = [];
+  // Main street nodes — both ped and car
   for (let x = TX; x <= TX + TW; x += GRID) {
-    nodes.push({ x, y: STREET_Y });
+    const n = { x, y: STREET_Y };
+    ped.push(n); all.push(n);
   }
-  // East stub: a few more nodes to the right
+  // East stub — both
   for (let x = TX + TW + GRID; x <= TX + TW + 5 * GRID; x += GRID) {
-    nodes.push({ x, y: STREET_Y });
+    const n = { x, y: STREET_Y };
+    ped.push(n); all.push(n);
   }
-  // North road: a few nodes above town
+  // North road — both
   for (let y = STREET_Y - GRID; y >= 0; y -= GRID) {
-    nodes.push({ x: SPINE_X, y });
+    const n = { x: SPINE_X, y };
+    ped.push(n); all.push(n);
   }
-  // Central spine + access lanes
+  // Access lanes — cars only
   for (const ay of ACCESS_YS) {
     for (let x = TX; x <= TX + TW; x += GRID) {
-      nodes.push({ x, y: ay });
+      all.push({ x, y: ay });
     }
   }
-  return nodes;
+  return { ped, all };
 }
-const STREET_NODES = buildStreetNodes();
+const { ped: PED_NODES, all: ALL_NODES } = buildWaypointSets();
 
-function nearestStreetNode(x, y) {
-  let best = STREET_NODES[0], bestD = Infinity;
-  for (const n of STREET_NODES) {
+function nearestNode(x, y, nodes) {
+  let best = nodes[0], bestD = Infinity;
+  for (const n of nodes) {
     const d = (n.x - x) ** 2 + (n.y - y) ** 2;
     if (d < bestD) { bestD = d; best = n; }
   }
   return best;
 }
 
-function randomStreetNode() {
-  return STREET_NODES[Math.floor(Math.random() * STREET_NODES.length)];
-}
-
-// Simple 2-hop path: from current pos → nearest street node → destination
-function buildWalkPath(fromX, fromY, toX, toY) {
-  const entry = nearestStreetNode(fromX, fromY);
-  const dest  = { x: toX, y: toY };
-  return [{ x: entry.x, y: entry.y }, dest];
-}
+function nearestStreetNode(x, y) { return nearestNode(x, y, PED_NODES); }
+function randomPedNode()  { return PED_NODES[Math.floor(Math.random() * PED_NODES.length)]; }
+function randomCarNode()  { return ALL_NODES[Math.floor(Math.random() * ALL_NODES.length)]; }
 
 // ── Movement helper ───────────────────────────────────────────────────────
 // Move (px,py) toward target at speed. Returns true when arrived.
@@ -629,8 +650,7 @@ function updatePerson(p, dt) {
           p.path = [{ x: carHome.parkingX + 9, y: carHome.parkingY + 6 }];
         } else {
           p.state = 'WANDER';
-          const dest = randomStreetNode();
-          p.path = [dest];
+          p.path = [randomPedNode()];
         }
       } else {
         const wp = p.path[0];
@@ -652,7 +672,7 @@ function updatePerson(p, dt) {
             { x: home.doorX + 1, y: home.doorY },
           ];
         } else {
-          p.path = [randomStreetNode()];
+          p.path = [randomPedNode()];
         }
       } else {
         const wp = p.path[0];
@@ -679,7 +699,7 @@ function updatePerson(p, dt) {
       if (p.stateTimer <= 0) {
         p.state = 'WANDER';
         p.interactPartner = null;
-        p.path = [randomStreetNode()];
+        p.path = [randomPedNode()];
       }
       break;
     }
@@ -747,13 +767,13 @@ function updatePerson(p, dt) {
         p.car.y = hm.parkingY + 6;
         p.car.parked = true;
         p.car.heading = 'E';
-        // Person reappears at gate
-        p.x = hm.gate.x + hm.gate.w / 2;
-        p.y = hm.gate.y + hm.gate.h / 2;
-        p.visible = true;
-        p.state = 'RETURN';
+        // Person reappears at parking spot and walks inside
         const gx = hm.gate.x + hm.gate.w / 2;
         const gy = hm.gate.y + hm.gate.h / 2;
+        p.x = hm.parkingX + 9;
+        p.y = hm.parkingY + 6;
+        p.visible = true;
+        p.state = 'RETURN';
         p.path = [
           { x: gx, y: gy },
           { x: hm.doorX + 1, y: hm.doorY },
@@ -786,6 +806,7 @@ function update(dt) {
 function animate(ts) {
   const dt = lastT === null ? 0 : Math.min((ts - lastT) / 1000, 0.1);
   lastT = ts;
+  updateFps(dt);
   update(dt);
   draw();
   requestAnimationFrame(animate);
