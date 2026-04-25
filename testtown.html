@@ -393,10 +393,11 @@ function drawCarSprite(cx, cy, heading, carColor, moving = false) {
   const sprite = CAR_SPRITES[heading] || CAR_SPRITES['E'];
   const sw = sprite[0].length, sh = sprite.length;
   let drawX = Math.floor(cx - sw/2), drawY = Math.floor(cy - sh/2);
-  // Left-hand driving: visually offset moving cars onto left side of road
+  // Left-hand driving: visually offset moving cars onto left side of road.
+  // When facing E, left = north = negative Y; W → south = +Y; S → east = +X; N → west = -X
   if (moving) {
-    if      (heading === 'E') drawY += LANE;
-    else if (heading === 'W') drawY -= LANE;
+    if      (heading === 'E') drawY -= LANE;
+    else if (heading === 'W') drawY += LANE;
     else if (heading === 'S') drawX += LANE;
     else if (heading === 'N') drawX -= LANE;
   }
@@ -449,8 +450,8 @@ function draw() {
   // parked cars
   for (const p of people) if (p.car.parked) drawCarSprite(p.car.x, p.car.y, p.car.heading, p.skin.carColor, false);
   drawPeople();
-  // moving cars (apply left-hand lane offset only while actively driving)
-  for (const p of people) if (!p.car.parked) drawCarSprite(p.car.x, p.car.y, p.car.heading, p.skin.carColor, p.state === 'DRIVE');
+  // moving cars (apply left-hand lane offset for all on-road driving states)
+  for (const p of people) if (!p.car.parked) drawCarSprite(p.car.x, p.car.y, p.car.heading, p.skin.carColor, p.state === 'DRIVE' || p.state === 'PARK_CAR');
   drawHUD();
 }
 
