@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-04-24T20:53:34.793Z",
+  "capturedAt": "2026-04-25T08:14:24.101Z",
   "bench001": {
     "topStopsCount": 6,
     "botStopsCount": 6,
@@ -9,7 +9,7 @@
     "storageViolations": 0
   },
   "bench002": {
-    "intervalSeconds": 24.26972727272727
+    "intervalSeconds": 24.28336363636364
   },
   "bench004": {
     "farmCellsDone": 80,
