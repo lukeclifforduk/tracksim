@@ -19,7 +19,7 @@ if (!scriptMatch) { console.error('No <script> tag found'); process.exit(1); }
 const fullScript = scriptMatch[1];
 
 const start = fullScript.indexOf('function createSim()');
-const end   = fullScript.indexOf('\nconst COLORS');
+const end   = fullScript.indexOf('\n  const COLORS');
 if (start === -1 || end === -1) { console.error('Cannot isolate createSim'); process.exit(1); }
 const createSimSrc = fullScript.slice(start, end);
 
