@@ -92,7 +92,7 @@ const PERSON_BASE = [
 const PERSON_WALK = [
   ['_','P','P','P','_'],['_','P','P','P','_'],['_','P','P','P','_'],
   ['_','S','S','S','_'],['_','S','S','S','_'],['_','S','S','S','_'],
-  ['_','B','B','B','_'],['B','_','_','_','B'],['_','_','_','_','_'],
+  ['_','B','B','B','_'],['B','_','_','_','B'],['_','B','_','B','_'],
 ];
 
 // Car: 18×12px  B=body(palette), K=outline, W=windshield, G=window
@@ -227,7 +227,7 @@ const PUBLIC_WALK_RECTS = [
   { x: BAK_PUBPARK_X, y: BAK_PUBPARK_Y, w: BAK_PUBPARK_W, h: BAK_PUBPARK_H },
   { x: BAK_FORE_X,    y: BAK_FORE_Y,    w: BAK_FORE_W,   h: BAK_FORE_H   },
 ];
-const GRASS_RADIUS = 10 * GRID;  // 180px max grass-walk radius from any road
+const GRASS_RADIUS = 8 * GRID;  // 144px max grass-walk radius from any road
 
 function drawPublicArea() {
   // ── Plaza (town square) X=0-54, Y=TY to TY+54
@@ -600,10 +600,44 @@ function safePedNode(x, y, homeId) {
   return best || PED_NODES[0];
 }
 
-function randomPedNode(homeId) {
-  // Pick random main-street node, never foreign building
-  const candidates = PED_NODES.filter(n => !insideForeignBuilding(n.x, n.y, homeId));
-  return candidates[Math.floor(Math.random() * candidates.length)];
+// Returns true if segment (x1,y1)→(x2,y2) passes through rectangle
+function segCrossesBox(x1, y1, x2, y2, rx, ry, rw, rh) {
+  function inside(x, y) { return x >= rx && x <= rx+rw && y >= ry && y <= ry+rh; }
+  if (inside(x1, y1) || inside(x2, y2)) return true;
+  function segSeg(ax,ay,bx,by,cx,cy,dx,dy) {
+    const dax=bx-ax,day=by-ay,dcx=dx-cx,dcy=dy-cy;
+    const d = dax*dcy - day*dcx; if (Math.abs(d)<1e-10) return false;
+    const t = ((cx-ax)*dcy-(cy-ay)*dcx)/d;
+    const s = ((cx-ax)*day-(cy-ay)*dax)/d;
+    return t>=0&&t<=1&&s>=0&&s<=1;
+  }
+  return segSeg(x1,y1,x2,y2, rx,ry, rx+rw,ry) ||
+         segSeg(x1,y1,x2,y2, rx+rw,ry, rx+rw,ry+rh) ||
+         segSeg(x1,y1,x2,y2, rx+rw,ry+rh, rx,ry+rh) ||
+         segSeg(x1,y1,x2,y2, rx,ry+rh, rx,ry);
+}
+
+// Returns false if the straight-line path from (x1,y1) to (x2,y2) crosses any foreign building
+function pathClearForPed(x1, y1, x2, y2, homeId) {
+  const h = homes[homeId];
+  for (const box of BUILDING_BOXES) {
+    if (box.bldgKey === `${h.rowIdx}_${h.bldgInRow}`) continue;
+    if (segCrossesBox(x1, y1, x2, y2, box.x, box.y, box.w, box.h)) return false;
+  }
+  return !segCrossesBox(x1, y1, x2, y2, BAK_BLDG_X, BAK_BLDG_Y, BAK_BLDG_W, BAK_BLDG_H);
+}
+
+function randomPedNode(homeId, fromX, fromY) {
+  // Try up to 50 random nodes; reject those inside or path-crossing foreign buildings
+  for (let i = 0; i < 50; i++) {
+    const n = PED_NODES[Math.floor(Math.random() * PED_NODES.length)];
+    if (insideForeignBuilding(n.x, n.y, homeId)) continue;
+    if (!pathClearForPed(fromX, fromY, n.x, n.y, homeId)) continue;
+    return n;
+  }
+  // Fallback: nearest main-street node that is path-clear
+  const ms = PED_NODES.filter(n => Math.abs(n.y - MAIN_CY) < 1 && pathClearForPed(fromX, fromY, n.x, n.y, homeId));
+  return ms.length ? ms[Math.floor(Math.random() * ms.length)] : PED_NODES[0];
 }
 function randomCarNode() {
   return ALL_NODES[Math.floor(Math.random() * ALL_NODES.length)];
@@ -700,7 +734,7 @@ function updatePerson(p, dt) {
     p.tirednessTimer += dt;
     if (p.tirednessTimer >= 1.0) {
       p.tirednessTimer -= 1.0;
-      p.tiredness = Math.min(100, p.tiredness + 1 + Math.floor(Math.random() * 2)); // 1 or 2/s
+      p.tiredness = Math.min(100, p.tiredness + Math.floor(Math.random() * 3)); // 0/1/2 avg 1/s → ~100s
     }
     if (p.tiredness >= 100 && !p.sleepOnReturn) {
       p.sleepOnReturn = true;
@@ -744,7 +778,7 @@ function updatePerson(p, dt) {
           p.path  = [{ x: h.parkingX + 9, y: h.parkingY + 6 }];
         } else {
           p.state = 'WANDER';
-          p.path  = [randomPedNode(p.homeId)];
+          p.path  = [randomPedNode(p.homeId, p.x, p.y)];
         }
       } else {
         const wp = p.path[0];
@@ -756,7 +790,7 @@ function updatePerson(p, dt) {
     case 'WANDER': {
       if (p.path.length === 0) {
         if (Math.random() < 0.02) { startReturn(p, h); break; }  // 2% — head home
-        p.path = [randomPedNode(p.homeId)];
+        p.path = [randomPedNode(p.homeId, p.x, p.y)];
       } else {
         const wp = p.path[0];
         if (stepToward(p, wp.x, wp.y, WALK_SPEED, dt)) p.path.shift();
@@ -782,7 +816,7 @@ function updatePerson(p, dt) {
       if (p.stateTimer <= 0) {
         p.state = 'WANDER'; p.interactPartner = null;
         p.interactCooldown = 1.0;
-        p.path = [randomPedNode(p.homeId)];
+        p.path = [randomPedNode(p.homeId, p.x, p.y)];
       }
       break;
     }
