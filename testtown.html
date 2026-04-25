@@ -474,9 +474,294 @@ function draw() {
   drawPeople();
 }
 
+// ── Drive path builders ───────────────────────────────────────────────────
+// Car navigates from parking → spine/main street → random loop → return
+function buildDrivePath(p) {
+  const hm = homes[p.homeId];
+  // Access lane Y for this row
+  const rowAY = ROWS[hm.rowIdx].parkingY + GRID / 2;
+  const startX = hm.parkingX + 9;
+
+  // Drive up to main street via spine
+  const waypoints = [
+    { x: startX, y: rowAY },
+    { x: SPINE_X, y: rowAY },
+    { x: SPINE_X, y: STREET_Y },
+  ];
+
+  // Pick 1-3 random destinations on main street / east stub
+  const extra = 1 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < extra; i++) {
+    const n = randomStreetNode();
+    waypoints.push({ x: n.x, y: STREET_Y });
+  }
+  return waypoints;
+}
+
+function buildReturnDrivePath(p, destX, destY) {
+  const hm = homes[p.homeId];
+  const rowAY = ROWS[hm.rowIdx].parkingY + GRID / 2;
+  return [
+    { x: SPINE_X, y: STREET_Y },
+    { x: SPINE_X, y: rowAY },
+    { x: destX,   y: rowAY },
+    { x: destX,   y: destY },
+  ];
+}
+
+// ── Street waypoint graph ─────────────────────────────────────────────────
+// Key walkable Y rows: main street centre (466+9=475), access lanes (529, 583, 637)
+// Key X anchors: TX=18, each bldg centre, NORTH_ROAD_X=126, TX+TW=252
+const STREET_Y    = MAIN_STREET_Y + GRID / 2;  // 475
+const ACCESS_YS   = [529, 583, 637];            // centres of access-lane rows
+const SPINE_X     = NORTH_ROAD_X;              // 126
+
+// Build a flat list of named street nodes
+function buildStreetNodes() {
+  const nodes = [];
+  // Main street: one node every GRID along the full width
+  for (let x = TX; x <= TX + TW; x += GRID) {
+    nodes.push({ x, y: STREET_Y });
+  }
+  // East stub: a few more nodes to the right
+  for (let x = TX + TW + GRID; x <= TX + TW + 5 * GRID; x += GRID) {
+    nodes.push({ x, y: STREET_Y });
+  }
+  // North road: a few nodes above town
+  for (let y = STREET_Y - GRID; y >= 0; y -= GRID) {
+    nodes.push({ x: SPINE_X, y });
+  }
+  // Central spine + access lanes
+  for (const ay of ACCESS_YS) {
+    for (let x = TX; x <= TX + TW; x += GRID) {
+      nodes.push({ x, y: ay });
+    }
+  }
+  return nodes;
+}
+const STREET_NODES = buildStreetNodes();
+
+function nearestStreetNode(x, y) {
+  let best = STREET_NODES[0], bestD = Infinity;
+  for (const n of STREET_NODES) {
+    const d = (n.x - x) ** 2 + (n.y - y) ** 2;
+    if (d < bestD) { bestD = d; best = n; }
+  }
+  return best;
+}
+
+function randomStreetNode() {
+  return STREET_NODES[Math.floor(Math.random() * STREET_NODES.length)];
+}
+
+// Simple 2-hop path: from current pos → nearest street node → destination
+function buildWalkPath(fromX, fromY, toX, toY) {
+  const entry = nearestStreetNode(fromX, fromY);
+  const dest  = { x: toX, y: toY };
+  return [{ x: entry.x, y: entry.y }, dest];
+}
+
+// ── Movement helper ───────────────────────────────────────────────────────
+// Move (px,py) toward target at speed. Returns true when arrived.
+function stepToward(obj, targetX, targetY, speed, dt) {
+  const dx = targetX - obj.x;
+  const dy = targetY - obj.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist < speed * dt + 0.5) {
+    obj.x = targetX;
+    obj.y = targetY;
+    return true;
+  }
+  obj.x += (dx / dist) * speed * dt;
+  obj.y += (dy / dist) * speed * dt;
+  return false;
+}
+
+// ── State machine update ───────────────────────────────────────────────────
+function updatePerson(p, dt) {
+  const home = homes[p.homeId];
+
+  // Leg animation
+  p.frameTimer += dt;
+  if (p.frameTimer > 0.18) { p.legFrame ^= 1; p.frameTimer = 0; }
+
+  switch (p.state) {
+    case 'AT_HOME': {
+      // Random chance to go out
+      if (Math.random() < 0.005) {
+        p.state = 'EXIT_HOUSE';
+        // Path: inside room → gate → main street
+        const gx = home.gate.x + home.gate.w / 2;
+        const gy = home.gate.y + home.gate.h / 2;
+        p.path = [
+          { x: home.doorX + 1, y: home.doorY },
+          { x: gx, y: gy },
+          { x: gx, y: STREET_Y },
+        ];
+      }
+      break;
+    }
+
+    case 'EXIT_HOUSE': {
+      if (p.path.length === 0) {
+        // Choose: 70% walk, 30% drive
+        if (Math.random() < 0.30 && p.car.parked) {
+          p.state = 'ENTER_CAR';
+          const carHome = homes[p.homeId];
+          p.path = [{ x: carHome.parkingX + 9, y: carHome.parkingY + 6 }];
+        } else {
+          p.state = 'WANDER';
+          const dest = randomStreetNode();
+          p.path = [dest];
+        }
+      } else {
+        const wp = p.path[0];
+        if (stepToward(p, wp.x, wp.y, WALK_SPEED, dt)) p.path.shift();
+      }
+      break;
+    }
+
+    case 'WANDER': {
+      if (p.path.length === 0) {
+        // Small chance to return home, else pick new waypoint
+        if (Math.random() < 0.008) {
+          p.state = 'RETURN';
+          const gx = home.gate.x + home.gate.w / 2;
+          const gy = home.gate.y + home.gate.h / 2;
+          p.path = [
+            nearestStreetNode(p.x, p.y),
+            { x: gx, y: gy },
+            { x: home.doorX + 1, y: home.doorY },
+          ];
+        } else {
+          p.path = [randomStreetNode()];
+        }
+      } else {
+        const wp = p.path[0];
+        if (stepToward(p, wp.x, wp.y, WALK_SPEED, dt)) p.path.shift();
+      }
+      // Proximity interaction check (5% when near another wanderer)
+      if (p.state === 'WANDER' && !p.interactPartner) {
+        for (const q of people) {
+          if (q === p || q.state !== 'WANDER' || q.interactPartner) continue;
+          const d = Math.hypot(q.x - p.x, q.y - p.y);
+          if (d < 12 && Math.random() < 0.05) {
+            const dur = 4 + Math.random() * 3;
+            p.state = 'INTERACT'; p.stateTimer = dur; p.interactPartner = q;
+            q.state = 'INTERACT'; q.stateTimer = dur; q.interactPartner = p;
+            break;
+          }
+        }
+      }
+      break;
+    }
+
+    case 'INTERACT': {
+      p.stateTimer -= dt;
+      if (p.stateTimer <= 0) {
+        p.state = 'WANDER';
+        p.interactPartner = null;
+        p.path = [randomStreetNode()];
+      }
+      break;
+    }
+
+    case 'RETURN': {
+      if (p.path.length === 0) {
+        // Arrived home
+        p.x = home.doorX + 1;
+        p.y = home.houseRect.hy + 6;
+        p.state = 'AT_HOME';
+      } else {
+        const wp = p.path[0];
+        if (stepToward(p, wp.x, wp.y, WALK_SPEED, dt)) p.path.shift();
+      }
+      break;
+    }
+
+    case 'SLEEPING': {
+      p.stateTimer -= dt;
+      if (p.stateTimer <= 0) p.state = 'AT_HOME';
+      break;
+    }
+
+    case 'ENTER_CAR': {
+      // Walk person to their car spot
+      if (p.path.length === 0) {
+        // Arrived at car — hide person, start driving
+        p.visible = false;
+        p.car.parked = false;
+        p.car.x = homes[p.homeId].parkingX + 9;
+        p.car.y = homes[p.homeId].parkingY + 6;
+        // Build a simple drive loop: up to main street, E or W, optional east stub, return
+        p.state = 'DRIVE';
+        p.path = buildDrivePath(p);
+      } else {
+        const wp = p.path[0];
+        if (stepToward(p, wp.x, wp.y, WALK_SPEED, dt)) p.path.shift();
+      }
+      break;
+    }
+
+    case 'DRIVE': {
+      if (p.path.length === 0) {
+        // Return to home parking
+        p.state = 'PARK_CAR';
+        const hm = homes[p.homeId];
+        p.path = buildReturnDrivePath(p, hm.parkingX + 9, hm.parkingY + 6);
+      } else {
+        const wp = p.path[0];
+        const arrived = stepToward(p.car, wp.x, wp.y, CAR_SPEED, dt);
+        // Update heading based on direction of travel
+        const dx = wp.x - p.car.x, dy = wp.y - p.car.y;
+        if (Math.abs(dx) > Math.abs(dy)) p.car.heading = dx > 0 ? 'E' : 'W';
+        else p.car.heading = dy > 0 ? 'S' : 'N';
+        if (arrived) p.path.shift();
+      }
+      break;
+    }
+
+    case 'PARK_CAR': {
+      if (p.path.length === 0) {
+        // Parked
+        const hm = homes[p.homeId];
+        p.car.x = hm.parkingX + 9;
+        p.car.y = hm.parkingY + 6;
+        p.car.parked = true;
+        p.car.heading = 'E';
+        // Person reappears at gate
+        p.x = hm.gate.x + hm.gate.w / 2;
+        p.y = hm.gate.y + hm.gate.h / 2;
+        p.visible = true;
+        p.state = 'RETURN';
+        const gx = hm.gate.x + hm.gate.w / 2;
+        const gy = hm.gate.y + hm.gate.h / 2;
+        p.path = [
+          { x: gx, y: gy },
+          { x: hm.doorX + 1, y: hm.doorY },
+        ];
+      } else {
+        const wp = p.path[0];
+        const arrived = stepToward(p.car, wp.x, wp.y, CAR_SPEED, dt);
+        const dx = wp.x - p.car.x, dy = wp.y - p.car.y;
+        if (Math.abs(dx) > Math.abs(dy)) p.car.heading = dx > 0 ? 'E' : 'W';
+        else p.car.heading = dy > 0 ? 'S' : 'N';
+        if (arrived) p.path.shift();
+      }
+      break;
+    }
+  }
+
+  // Rare sleep roll while AT_HOME
+  if (p.state === 'AT_HOME' && Math.random() < 0.0005) {
+    p.state = 'SLEEPING';
+    p.stateTimer = 8 + Math.random() * 12;
+  }
+}
+
 // ── Update ────────────────────────────────────────────────────────────────
 function update(dt) {
-  // state machine ticks go here
+  for (const p of people) updatePerson(p, dt);
 }
 
 // ── Animation loop ────────────────────────────────────────────────────────
