@@ -40,6 +40,9 @@ const SPINE_X  = 126;  // Central spine (also right edge of bakery block)
 const EPERIM_X = 252;  // East perimeter
 const NORTH_X  = 126;  // North entry (same as spine)
 
+// Left-hand traffic lane offset (visual only, pixels from road centre)
+const LANE = 4;
+
 // Road centre lines (for waypoints)
 const MAIN_CY  = MAIN_Y  + GRID / 2;   // 579
 const CRES1_CY = CRES1_Y + GRID / 2;   // 633
@@ -58,9 +61,28 @@ const ROWS = [
 
 // 6 buildings per row, bilateral symmetric about X=135
 const BLDG_XS = [18, 54, 90, 144, 180, 216];
-// Variants per building position (bilateral: pos 0↔5, 1↔4, 2↔3)
+// Per-row variant arrays; positions 0&5 always 'drv', 1-4 random
 // drv = driveway parking, std = road bay parking
-const BLDG_VARIANTS = ['drv','std','drv','drv','std','drv'];
+let ROW_VARIANTS = [];
+
+function genRowVariants() {
+  const v = ['drv', 'drv', 'drv', 'drv', 'drv', 'drv'];
+  const eligible = [1, 2, 3, 4].sort(() => Math.random() - 0.5);
+  const count = 1 + Math.floor(Math.random() * 2);  // 1 or 2 std bays per row
+  const placed = [];
+  for (const pos of eligible) {
+    if (!placed.some(q => Math.abs(q - pos) <= 1)) {
+      v[pos] = 'std';
+      placed.push(pos);
+      if (placed.length >= count) break;
+    }
+  }
+  return v;
+}
+
+function initVariants() {
+  ROW_VARIANTS = [genRowVariants(), genRowVariants(), genRowVariants()];
+}
 
 // ── Colour palettes (30 entries each) ─────────────────────────────────────
 // PALETTE: shirt/car colour per resident (earthy, muted)
@@ -281,18 +303,18 @@ function drawPublicArea() {
 
 // ── Draw: parking bay markings on crescent roads ───────────────────────────
 function drawParkingBays() {
-  const crescentYs = [CRES1_Y, CRES2_Y, CRES3_Y];
   for (let ri = 0; ri < 3; ri++) {
-    const cy = crescentYs[ri];
+    const cy = ROWS[ri].crescentY;
     for (let bi = 0; bi < BLDG_XS.length; bi++) {
-      if (BLDG_VARIANTS[bi] === 'std') {
-        const bx = BLDG_XS[bi];
-        // Two 9×12 bays side-by-side at top of crescent road
-        ctx.fillStyle = '#4a4a4a';
-        ctx.fillRect(bx + 1, cy + 1, 16, 12);
+      if (ROW_VARIANTS[ri][bi] !== 'std') continue;
+      const bx = BLDG_XS[bi];
+      // Two horizontal bays (parallel to road) in top 8px of crescent, one per half
+      for (let half = 0; half < 2; half++) {
+        const hx = bx + half * 18;
+        ctx.fillStyle = '#505050';
+        ctx.fillRect(hx + 1, cy + 1, 16, 8);
         ctx.strokeStyle = '#e0e0e0'; ctx.lineWidth = 1;
-        ctx.strokeRect(bx + 1,     cy + 1, 8, 12);
-        ctx.strokeRect(bx + 9, cy + 1, 8, 12);
+        ctx.strokeRect(hx + 1, cy + 1, 16, 8);
       }
     }
   }
@@ -366,10 +388,17 @@ function drawPersonSprite(px, py, skin, walking, sleeping) {
 }
 
 // ── Draw: car sprite ───────────────────────────────────────────────────────
-function drawCarSprite(cx, cy, heading, carColor) {
+function drawCarSprite(cx, cy, heading, carColor, moving = false) {
   const sprite = CAR_SPRITES[heading] || CAR_SPRITES['E'];
   const sw = sprite[0].length, sh = sprite.length;
-  const drawX = Math.floor(cx - sw/2), drawY = Math.floor(cy - sh/2);
+  let drawX = Math.floor(cx - sw/2), drawY = Math.floor(cy - sh/2);
+  // Left-hand driving: visually offset moving cars onto left side of road
+  if (moving) {
+    if      (heading === 'E') drawY += LANE;
+    else if (heading === 'W') drawY -= LANE;
+    else if (heading === 'S') drawX += LANE;
+    else if (heading === 'N') drawX -= LANE;
+  }
   const cr = parseInt(carColor.slice(1,3),16), cg = parseInt(carColor.slice(3,5),16), cb = parseInt(carColor.slice(5,7),16);
   const darker = `rgb(${Math.floor(cr*0.6)},${Math.floor(cg*0.6)},${Math.floor(cb*0.6)})`;
   const cm = { B: carColor, D: darker, K: '#111111', W: '#9ad6e8' };
@@ -417,10 +446,10 @@ function draw() {
   drawHouses();
   drawParkingBays();
   // parked cars
-  for (const p of people) if (p.car.parked) drawCarSprite(p.car.x, p.car.y, p.car.heading, p.skin.carColor);
+  for (const p of people) if (p.car.parked) drawCarSprite(p.car.x, p.car.y, p.car.heading, p.skin.carColor, false);
   drawPeople();
-  // moving cars
-  for (const p of people) if (!p.car.parked) drawCarSprite(p.car.x, p.car.y, p.car.heading, p.skin.carColor);
+  // moving cars (apply left-hand lane offset only while actively driving)
+  for (const p of people) if (!p.car.parked) drawCarSprite(p.car.x, p.car.y, p.car.heading, p.skin.carColor, p.state === 'DRIVE');
   drawHUD();
 }
 
@@ -433,7 +462,7 @@ function buildHomes() {
     const row = ROWS[ri];
     for (let bi = 0; bi < BLDG_XS.length; bi++) {
       const bx      = BLDG_XS[bi];
-      const variant = BLDG_VARIANTS[bi];
+      const variant = ROW_VARIANTS[ri][bi];
       // Register full building bounding box (garden + house) for path rejection
       BUILDING_BOXES.push({ x: bx, y: row.gardenY, w: 36, h: 36, bldgKey: `${ri}_${bi}` });
       for (let half = 0; half < 2; half++) {
@@ -454,21 +483,22 @@ function buildHomes() {
         const bedX = bedCorner === 0 ? hx + 1 : hx + 11;
         const bedY = hy + 2;
 
-        // Parking
+        // Parking — coordinates such that car.x = parkingX+9, car.y = parkingY+6
         let parkingX, parkingY;
         if (variant === 'drv') {
-          // Driveway: left half parks on left side of garden, right on right
-          parkingX = half === 0 ? gx + 2 : gx + 11;
-          parkingY = gy + 4;
+          // S-facing car (9w×14h) centred in 9px driveway strip
+          // Driveway: left half = hx..hx+9, right half = hx+9..hx+18
+          const dvx = half === 0 ? hx : hx + 9;
+          parkingX = dvx - 5;         // car.x = dvx+4 (centre of 9px strip)
+          parkingY = gy + 3;          // car.y = gy+9 (centre of 18px deep driveway)
         } else {
-          // Road bay: on the crescent below (south of house)
-          parkingX = half === 0 ? bx + 3 : bx + 12;
-          parkingY = row.crescentY + 3;
+          // E-facing car (14w×9h) in top 8px of crescent road, per half (18px wide)
+          parkingX = hx;              // car.x = hx+9 (centre of 18px half)
+          parkingY = row.crescentY - 2; // car.y = crescentY+4 (centre of top 8px)
         }
 
-        // Parking heading: drv homes face south (entered from road above garden);
-        // std bay homes face north (nosed in from crescent below house).
-        const parkingHeading = variant === 'drv' ? 'S' : 'N';
+        // Parking heading: drv=S (nose in from road above), std=E (parallel to road)
+        const parkingHeading = variant === 'drv' ? 'S' : 'E';
 
         homes.push({
           id, rowIdx: ri, bldgInRow: bi, half, variant,
@@ -931,6 +961,7 @@ function update(dt) {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────
+initVariants();
 buildHomes();
 buildStreetNodes();
 buildPeople();
