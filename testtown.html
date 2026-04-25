@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Test Town</title>
+  <style>
+    body { margin: 0; background: #222; display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; image-rendering: pixelated; }
+    canvas { display: block; image-rendering: pixelated; }
+  </style>
+</head>
+<body>
+<canvas id="c" width="1200" height="700"></canvas>
+<script>
+'use strict';
+
+// ── Constants ──────────────────────────────────────────────────────────────
+const W = 1200, H = 700;
+const GRID = 18;
+const WALK_SPEED = 28;   // px/s
+const CAR_SPEED  = 50;   // px/s
+
+// Town footprint
+const TX = 18, TY = 430;           // town top-left
+const TW = 234, TH = 270;          // town width/height (X:18-252, Y:430-700)
+const MAIN_STREET_Y = 466;         // top of main E-W street
+const NORTH_ROAD_X  = 126;         // centre-line of north road / central spine
+const EAST_ROAD_Y   = 466;         // same row as main street (east stub)
+
+// Row definitions: [gardenY, houseY, parkingY]
+const ROWS = [
+  { gardenY: 484, houseY: 502, parkingY: 520 },
+  { gardenY: 538, houseY: 556, parkingY: 574 },
+  { gardenY: 592, houseY: 610, parkingY: 628 },
+];
+
+// Variant pattern (15 buildings, indices 0-14)
+// 'std' = front garden + rear parking
+// 'front' = front-pad parking (driveway beside gate)
+// 'side' = side garden (end-of-row only)
+const BLDG_VARIANTS = [
+  'std','std','front','std','side',   // row 0, bldgs 0-4
+  'side','front','std','std','front', // row 1, bldgs 5-9
+  'front','side','std','std','front', // row 2, bldgs 10-14
+];
+
+// ── Colour palette ─────────────────────────────────────────────────────────
+const PALETTE = [
+  '#b25a3c','#c9a043','#6a8e5a','#3d7c8c','#5a6a8e',
+  '#8e3d4a','#6a4d7a','#d9c9a3','#4a6e4a','#a87a4a',
+];
+
+// ── Sprite: person (5×9) ──────────────────────────────────────────────────
+// P=head(pink), S=shirt(palette), B=black legs
+const PERSON_BASE = [
+  ['_','P','P','P','_'],
+  ['_','P','P','P','_'],
+  ['_','P','P','P','_'],
+  ['_','S','S','S','_'],
+  ['_','S','S','S','_'],
+  ['_','S','S','S','_'],
+  ['_','B','B','B','_'],
+  ['_','B','B','B','_'],
+  ['_','B','_','B','_'],
+];
+const PERSON_WALK = [
+  ['_','P','P','P','_'],
+  ['_','P','P','P','_'],
+  ['_','P','P','P','_'],
+  ['_','S','S','S','_'],
+  ['_','S','S','S','_'],
+  ['_','S','S','S','_'],
+  ['_','B','B','B','_'],
+  ['B','_','_','_','B'],
+  ['_','_','_','_','_'],
+];
+
+// ── Sprite: car (18×12) ──────────────────────────────────────────────────
+// B=body(palette), K=black outline, W=windshield cyan, G=window green
+const CAR_BASE = [
+  ['_','_','_','_','K','K','K','_','_','_','_','K','K','K','_','_','_','_'],
+  ['_','_','_','K','B','B','B','B','B','B','B','B','B','B','K','_','_','_'],
+  ['K','K','K','K','B','B','B','B','B','B','B','B','B','B','K','K','K','K'],
+  ['K','B','B','K','B','B','B','B','B','B','K','K','K','K','K','B','B','K'],
+  ['K','B','B','K','B','B','B','B','B','B','K','W','W','W','K','B','B','K'],
+  ['K','B','B','K','B','B','B','B','B','B','K','W','W','W','K','B','B','K'],
+  ['K','B','B','K','B','B','B','B','B','B','K','W','W','W','K','B','B','K'],
+  ['K','B','B','K','B','B','B','B','B','B','K','W','W','W','K','B','B','K'],
+  ['K','B','B','K','B','B','B','B','B','B','K','K','K','K','K','B','B','K'],
+  ['K','K','K','K','B','B','B','B','B','B','B','B','B','B','K','K','K','K'],
+  ['_','_','_','K','B','B','B','B','B','B','B','B','B','B','K','_','_','_'],
+  ['_','_','_','_','K','K','K','_','_','_','_','_','K','K','K','_','_','_'],
+];
+
+function rotateSprite(s) {
+  const rows = s.length, cols = s[0].length;
+  const out = Array.from({length: cols}, () => Array(rows).fill('_'));
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++)
+      out[c][rows - 1 - r] = s[r][c];
+  return out;
+}
+const CAR_EAST  = CAR_BASE;
+const CAR_SOUTH = rotateSprite(CAR_EAST);
+const CAR_WEST  = rotateSprite(CAR_SOUTH);
+const CAR_NORTH = rotateSprite(CAR_WEST);
+const CAR_SPRITES = { E: CAR_EAST, S: CAR_SOUTH, W: CAR_WEST, N: CAR_NORTH };
+
+// ── Canvas ─────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+
+// ── State ──────────────────────────────────────────────────────────────────
+let homes  = [];
+let people = [];
+let lastT  = null;
+
+// ── Homes array ────────────────────────────────────────────────────────────
+// 3 rows × 5 buildings × 2 halves = 30 homes
+// Each building is 36px wide, starting at TX=18, stepping by 36+gap
+// Buildings are spaced so 5 fit in 216px (5×36=180 + gaps)
+// X positions: 18, 54, 90, 126, 162 (each building 36px wide)
+// The central spine at X=126 is also the left edge of building index 3 in each row,
+// so we leave an 18px road gap between buildings 2 and 3 (indices 1 and 2 from 0).
+// Actual building X positions: 18, 54, 90,  [spine gap at 126]  144, 180
+// That gives: bldgX = [18, 54, 90, 144, 180]
+const BLDG_XS = [18, 54, 90, 144, 180];
+
+function buildHomes() {
+  homes = [];
+  let id = 0;
+  for (let ri = 0; ri < 3; ri++) {
+    const row = ROWS[ri];
+    for (let bi = 0; bi < 5; bi++) {
+      const bldgIdx = ri * 5 + bi;
+      const variant  = BLDG_VARIANTS[bldgIdx];
+      const bx = BLDG_XS[bi];        // building left X
+      const bw = 36, bh = 18;        // building 36×18
+
+      // House rect (always at houseY row)
+      const hx = bx, hy = row.houseY, hw = bw, hh = bh;
+
+      // Garden rect — always one GRID row above the house
+      // For 'side' variant: garden is to the side (left for first bldg of row, right for last)
+      let gardenRect;
+      if (variant === 'side' && bi === 0) {
+        // side garden to the left — but TX=18 so no room; use a narrow strip above instead
+        gardenRect = { x: bx, y: row.gardenY, w: bw, h: bh };
+      } else if (variant === 'side' && bi === 4) {
+        // side garden to the right
+        gardenRect = { x: bx, y: row.gardenY, w: bw, h: bh };
+      } else {
+        gardenRect = { x: bx, y: row.gardenY, w: bw, h: bh };
+      }
+
+      // Gate: 4px gap in fence facing main street (south face of garden = top of garden strip)
+      // Garden south face Y = row.gardenY + bh (= houseY), gate is in north fence of garden (facing street)
+      // Main street is above garden; gate opens toward main street (north face of garden)
+      let gate;
+      if (variant === 'side' && bi === 0) {
+        // gate on east side
+        gate = { x: bx + bw - 1, y: row.gardenY + bh / 2 - 2, w: 3, h: 4 };
+      } else if (variant === 'side' && bi === 4) {
+        // gate on west side
+        gate = { x: bx - 1, y: row.gardenY + bh / 2 - 2, w: 3, h: 4 };
+      } else {
+        // gate on north face (facing main street / access lane above)
+        gate = { x: bx + bw / 2 - 2, y: row.gardenY - 1, w: 4, h: 3 };
+      }
+
+      // Parking: rear lane (parkingY row) by default; front-pad on street side if 'front'
+      let parkingX, parkingY;
+      if (variant === 'front') {
+        // front-pad: beside the gate on the garden/street row
+        parkingX = bx + 2;
+        parkingY = row.gardenY + 2;
+      } else {
+        // rear lane
+        parkingX = bx + 2;
+        parkingY = row.parkingY + 3;
+      }
+
+      // Two halves: left (homeId=id) and right (homeId=id+1)
+      for (let half = 0; half < 2; half++) {
+        const doorX = bx + (half === 0 ? bw / 4 - 1 : 3 * bw / 4 - 1);
+        const color  = PALETTE[id % PALETTE.length];
+
+        homes.push({
+          id,
+          bldgIdx, rowIdx: ri, bldgInRow: bi, half,
+          variant,
+          houseRect: { hx, hy, hw, hh },
+          gardenRect,
+          gate,
+          doorX: Math.floor(doorX),
+          doorY: hy + hh - 5,
+          parkingX: Math.floor(parkingX) + half * 9,
+          parkingY: Math.floor(parkingY),
+          color,
+        });
+        id++;
+      }
+    }
+  }
+}
+
+// ── People array (built in Step 4) ────────────────────────────────────────
+function buildPeople() { people = []; /* populated in step 4 */ }
+
+// ── Draw helpers ───────────────────────────────────────────────────────────
+function dashedCentreLine(x1, y1, x2, y2) {
+  ctx.save();
+  ctx.strokeStyle = '#e0e0e0';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([6, 6]);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+// ── Draw: grass background ─────────────────────────────────────────────────
+function drawGrass() {
+  ctx.fillStyle = '#2e8b57';
+  ctx.fillRect(0, 0, W, H);
+}
+
+// ── Draw: roads ────────────────────────────────────────────────────────────
+function drawRoads() {
+  const roadColor = '#3f3f3f';
+
+  // North road: Y=0 → Y=MAIN_STREET_Y, centred at NORTH_ROAD_X
+  ctx.fillStyle = roadColor;
+  ctx.fillRect(NORTH_ROAD_X - GRID / 2, 0, GRID, MAIN_STREET_Y);
+  dashedCentreLine(NORTH_ROAD_X, 0, NORTH_ROAD_X, MAIN_STREET_Y);
+
+  // Main E-W street: X=TX → X=252, Y=MAIN_STREET_Y, height=GRID
+  ctx.fillStyle = roadColor;
+  ctx.fillRect(TX, MAIN_STREET_Y, TW, GRID);
+  dashedCentreLine(TX, MAIN_STREET_Y + GRID / 2, TX + TW, MAIN_STREET_Y + GRID / 2);
+
+  // East road stub: X=252 → X=W, same row
+  ctx.fillStyle = roadColor;
+  ctx.fillRect(TX + TW, EAST_ROAD_Y, W - (TX + TW), GRID);
+  dashedCentreLine(TX + TW, EAST_ROAD_Y + GRID / 2, W, EAST_ROAD_Y + GRID / 2);
+
+  // Central spine: continues south of main street through residential rows
+  // X=NORTH_ROAD_X-9 .. +9, from MAIN_STREET_Y+GRID down to Y=646
+  ctx.fillStyle = roadColor;
+  ctx.fillRect(NORTH_ROAD_X - GRID / 2, MAIN_STREET_Y + GRID, GRID, 646 - (MAIN_STREET_Y + GRID));
+  dashedCentreLine(NORTH_ROAD_X, MAIN_STREET_Y + GRID, NORTH_ROAD_X, 646);
+
+  // Rear access lanes (parking rows): Y=520, 574, 628 — full town width
+  const accessYs = [520, 574, 628];
+  for (const ay of accessYs) {
+    ctx.fillStyle = roadColor;
+    ctx.fillRect(TX, ay, TW, GRID);
+    dashedCentreLine(TX, ay + GRID / 2, TX + TW, ay + GRID / 2);
+  }
+}
+
+// ── Draw: public area (town square + bakery + bakery parking) ──────────────
+function drawPublicArea() {
+  // Town square: (18,430) 72×36
+  ctx.fillStyle = '#c9b38a';
+  ctx.fillRect(18, 430, 72, 36);
+  ctx.strokeStyle = '#a89060';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(18, 430, 72, 36);
+
+  // Bakery: (90,430) 54×36
+  ctx.fillStyle = '#e8c97a';
+  ctx.fillRect(90, 430, 54, 36);
+  ctx.strokeStyle = '#5a4a36';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(90, 430, 54, 36);
+  // Bakery roof strip
+  ctx.fillStyle = '#c4956a';
+  ctx.fillRect(90, 430, 54, 4);
+  // Bakery door
+  ctx.fillStyle = '#7a4a28';
+  ctx.fillRect(114, 455, 6, 11);
+
+  // Bakery parking: (144,430) 54×36 — 4 spots
+  ctx.fillStyle = '#3f3f3f';
+  ctx.fillRect(144, 430, 54, 36);
+  ctx.strokeStyle = '#e0e0e0';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 4; i++) {
+    const sx = 144 + i * 13 + 2;
+    ctx.strokeRect(sx, 432, 11, 32);
+  }
+}
+
+// ── Draw: gardens, fences and houses for all 30 homes ─────────────────────
+function drawHomesLayout() {
+  for (const h of homes) {
+    drawGarden(h);
+    drawHouse(h);
+  }
+}
+
+function drawGarden(h) {
+  // Garden fill
+  ctx.fillStyle = '#3ca067';
+  ctx.fillRect(h.gardenRect.x, h.gardenRect.y, h.gardenRect.w, h.gardenRect.h);
+  // Fence perimeter (2px)
+  ctx.strokeStyle = '#8b6f47';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(h.gardenRect.x, h.gardenRect.y, h.gardenRect.w, h.gardenRect.h);
+  // Gate: 4px gap on fence facing street
+  ctx.fillStyle = '#2e8b57'; // erase fence segment with grass to show gate
+  const g = h.gate;
+  ctx.fillRect(g.x, g.y, g.w, g.h);
+}
+
+function drawHouse(h) {
+  const { hx, hy, hw, hh } = h.houseRect;
+  // Walls
+  ctx.fillStyle = '#a0856a';
+  ctx.fillRect(hx, hy, hw, hh);
+  ctx.strokeStyle = '#5a4a36';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(hx, hy, hw, hh);
+  // Roof strip
+  ctx.fillStyle = '#c4956a';
+  ctx.fillRect(hx, hy, hw, 3);
+  // Door gap (2px wide, bottom of house)
+  ctx.fillStyle = '#7a4a28';
+  ctx.fillRect(h.doorX, hy + hh - 5, 3, 5);
+  // Divider line between the two semis
+  ctx.strokeStyle = '#5a4a36';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(hx + hw / 2, hy);
+  ctx.lineTo(hx + hw / 2, hy + hh);
+  ctx.stroke();
+  // Beds (one per half)
+  drawBed(hx + 2, hy + 2);
+  drawBed(hx + hw / 2 + 2, hy + 2);
+}
+
+function drawBed(bx, by) {
+  // Mattress
+  ctx.fillStyle = '#d9c9a3';
+  ctx.fillRect(bx, by, 6, 8);
+  // Pillow
+  ctx.fillStyle = '#f4ecd8';
+  ctx.fillRect(bx, by, 6, 3);
+}
+
+// ── Main draw ──────────────────────────────────────────────────────────────
+function draw() {
+  drawGrass();
+  drawRoads();
+  drawPublicArea();
+  drawHomesLayout();
+  // people + cars drawn in later steps
+}
+
+// ── Update ────────────────────────────────────────────────────────────────
+function update(dt) {
+  // state machine ticks go here
+}
+
+// ── Animation loop ────────────────────────────────────────────────────────
+function animate(ts) {
+  const dt = lastT === null ? 0 : Math.min((ts - lastT) / 1000, 0.1);
+  lastT = ts;
+  update(dt);
+  draw();
+  requestAnimationFrame(animate);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+buildHomes();
+buildPeople();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
