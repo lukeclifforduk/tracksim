@@ -243,9 +243,12 @@
   class Harvester {
   constructor() {
   this.state = 'PARKED';
-  this.x = FARM_OUTER_X + FARM_BLOCK_SIZE * 1.5;
-  this.y = FARM_OUTER_Y + FARM_BLOCK_SIZE * 0.5;
-  this.angle = Math.PI / 2;
+  this.homeX = COMBINE_HOME_CENTER_X;
+  this.homeY = COMBINE_HOME_CENTER_Y;
+  this.homeAngle = 0;
+  this.x = this.homeX;
+  this.y = this.homeY;
+  this.angle = this.homeAngle;
   this.speed = 55;
   this.path = [];
   this.pathIndex = 0;
@@ -291,8 +294,23 @@
   this.currentCell = farmCells.find(cell => cell.col === next.col && cell.row === next.row);
   this.state = 'MOVING_TO_CELL';
   } else {
-  this.state = 'DONE';
+  this.state = 'RETURNING_TO_HOME';
   }
+  }
+  } else if (this.state === 'RETURNING_TO_HOME') {
+  const dx = this.homeX - this.x;
+  const dy = this.homeY - this.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 6) {
+  this.x = this.homeX;
+  this.y = this.homeY;
+  this.angle = this.homeAngle;
+  this.state = 'DONE';
+  } else {
+  this.angle = Math.atan2(dy, dx);
+  const moveDist = Math.min(this.speed * dt, dist);
+  this.x += Math.cos(this.angle) * moveDist;
+  this.y += Math.sin(this.angle) * moveDist;
   }
   }
   }
@@ -564,6 +582,12 @@
   const ASPHALT_Y = 72;
   const ASPHALT_W = 78;
   const ASPHALT_H = 28;
+  const COMBINE_HOME_W = 40;
+  const COMBINE_HOME_H = 28;
+  const COMBINE_HOME_X = ASPHALT_X - FARM_BLOCK_SIZE - COMBINE_HOME_W;
+  const COMBINE_HOME_Y = ASPHALT_Y;
+  const COMBINE_HOME_CENTER_X = COMBINE_HOME_X + COMBINE_HOME_W / 2;
+  const COMBINE_HOME_CENTER_Y = COMBINE_HOME_Y + COMBINE_HOME_H / 2;
   function getTopStorageSlotPosition(index) {
   return {
   x: TOP_STORAGE_X + STORAGE_CELL_MARGIN + (index % STORAGE_COLS) * STORAGE_CELL_STEP + STORAGE_CELL_HALF,
@@ -1613,6 +1637,8 @@
   TOP_PLATFORM_HEIGHT, BOTTOM_PLATFORM_HEIGHT, BOTTOM_PLATFORM_OFFSET,
   BUILDING_HEIGHT, STATION_TOTAL_HEIGHT, CARRIAGE_SEPARATION,
   ASPHALT_X, ASPHALT_Y, ASPHALT_W, ASPHALT_H,
+  COMBINE_HOME_X, COMBINE_HOME_Y, COMBINE_HOME_W, COMBINE_HOME_H,
+  COMBINE_HOME_CENTER_X, COMBINE_HOME_CENTER_Y,
   },
   farmGeometry: {
   FARM_OUTER_X, FARM_OUTER_Y, FARM_OUTER_W, FARM_OUTER_H,
@@ -1847,6 +1873,15 @@
   ctx.lineWidth = 2;
   ctx.setLineDash([8, 8]);
   ctx.strokeRect(ASPHALT_X + 4, ASPHALT_Y + 4, ASPHALT_W - 8, ASPHALT_H - 8);
+  ctx.setLineDash([]);
+  }
+  function drawCombineHomeArea() {
+  ctx.fillStyle = '#3f3f3f';
+  ctx.fillRect(COMBINE_HOME_X, COMBINE_HOME_Y, COMBINE_HOME_W, COMBINE_HOME_H);
+  ctx.strokeStyle = '#e0e0e0';
+  ctx.lineWidth = 3;
+  ctx.setLineDash([5, 5]);
+  ctx.strokeRect(COMBINE_HOME_X + 3, COMBINE_HOME_Y + 3, COMBINE_HOME_W - 6, COMBINE_HOME_H - 6);
   ctx.setLineDash([]);
   }
   function drawStorage(sx, sy, count) {
@@ -2455,6 +2490,7 @@
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
   drawFarmPatch();
   drawAsphaltParkingBay();
+  drawCombineHomeArea();
   drawRoads();
   drawQuarryBlocks();
   drawStations();
