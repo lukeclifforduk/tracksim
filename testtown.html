@@ -159,6 +159,9 @@ let PED_NODES = [];
 let ALL_NODES = [];
 let lastT  = null;
 
+// ── Bakery state ───────────────────────────────────────────────────────────
+let bakery = null;
+
 // ── FPS tracking ──────────────────────────────────────────────────────────
 let _fps = 60, _fpsTimer = 0, _fpsFrames = 0;
 function updateFps(dt) {
@@ -219,18 +222,54 @@ function drawRoads() {
   road(TX, CRES3_Y, TW, GRID, TX, CRES3_CY, TX + TW, CRES3_CY);
 }
 
-// ── Draw: public area ──────────────────────────────────────────────────────
-// Public bakery zone constants (used by both drawing and AI)
-const BAK_PLAZA_X = 0,   BAK_PLAZA_Y = TY,       BAK_PLAZA_W = 54, BAK_PLAZA_H = 54;
-const BAK_PUBPARK_X = 54, BAK_PUBPARK_Y = TY,     BAK_PUBPARK_W = 72, BAK_PUBPARK_H = 54;
-const BAK_BLDG_X = 0,   BAK_BLDG_Y = TY + 54,    BAK_BLDG_W = 108, BAK_BLDG_H = 54;
-const BAK_ALLEY_X = 108, BAK_ALLEY_Y = TY + 54,  BAK_ALLEY_W = 18,  BAK_ALLEY_H = 72;
-const BAK_FORE_X = 0,   BAK_FORE_Y = TY + 108,   BAK_FORE_W = 108, BAK_FORE_H = 18;
+// ── Bakery building constants (10 rows × 8 cols) ──────────────────────────
+// Row 0 is adjacent to road (bottom), row 9 is at top; col 1 = X=0.
+// bkRowY(r) = pixel Y of the TOP of that row.
+// bkColX(c) = pixel X of the LEFT of that column (c is 1-indexed).
+function bkRowY(r) { return MAIN_Y - (r + 1) * GRID; }
+function bkColX(c) { return (c - 1) * GRID; }
 
-// Public car parking bays (AI-accessible destinations)
-const PUBLIC_BAYS = [];
-for (let i = 0; i < 4; i++) PUBLIC_BAYS.push({ x: BAK_PUBPARK_X + 9 + i*18, y: BAK_PUBPARK_Y + 27, heading: 'S' });
-for (let i = 0; i < 6; i++) PUBLIC_BAYS.push({ x: BAK_FORE_X + 9 + i*18, y: BAK_FORE_Y + 9,     heading: 'N' });
+// Full bakery footprint (cols 1-8 = X:0-144, rows 0-9 = Y:390-570)
+const BK_FULL_X = 0,          BK_FULL_Y = MAIN_Y - 10 * GRID;
+const BK_FULL_W = 8 * GRID,   BK_FULL_H = 10 * GRID;
+// Building interior (rows 0-5): Y 462-570
+const BK_INT_Y = MAIN_Y - 6 * GRID, BK_INT_H = 6 * GRID;
+// Truck yard (rows 6-9): Y 390-462
+const BK_YARD_Y = MAIN_Y - 10 * GRID, BK_YARD_H = 4 * GRID;
+
+// Key cell top-left corners
+const BK_OVEN1_X  = bkColX(8), BK_OVEN1_Y  = bkRowY(3);  // col 8, row 3
+const BK_OVEN2_X  = bkColX(8), BK_OVEN2_Y  = bkRowY(2);  // col 8, row 2
+// Jigger rest position L — centre of col 8, row 5
+const BK_JIGGER_HOME_X = bkColX(8) + 9, BK_JIGGER_HOME_Y = bkRowY(5) + 9;
+// T lane centre-X for jigger travel
+const BK_LANE1_CX = bkColX(5) + 9;  // col 5
+const BK_LANE2_CX = bkColX(7) + 9;  // col 7
+// Server post — col 6, row 2 centre
+const BK_SERVER_X = bkColX(6) + 9, BK_SERVER_Y = bkRowY(2) + 9;
+// Baker spawn point inside bakery — col 4, row 0 (just inside door)
+const BK_BAKER_ENTRY_X = bkColX(4) + 9, BK_BAKER_ENTRY_Y = bkRowY(0) + 9;
+
+// Storage cells: cols 1-5, rows 2-5 = 20 cells
+const BK_STORAGE_CELLS = [];
+for (let r = 2; r <= 5; r++)
+  for (let c = 1; c <= 5; c++)
+    BK_STORAGE_CELLS.push({ x: bkColX(c), y: bkRowY(r), cx: bkColX(c)+9, cy: bkRowY(r)+9, row: r, col: c });
+
+// Bread display V cells: row 1, cols 1-6
+const BK_V_CELLS = [];
+for (let c = 1; c <= 6; c++)
+  BK_V_CELLS.push({ x: bkColX(c), y: bkRowY(1), col: c, active: c <= 5 });
+
+// Truck definitions: { x, y, w, h, palletCols, palletRows }
+// Large trucks: cols 4-5 and cols 6-7, rows 6-9 (4 deep × 2 wide = 8 pallets each)
+// Small trucks: col 8 split into two 9px halves, rows 6-8 (3 deep × 1 wide = 3 pallets each)
+const BK_TRUCK_DEFS = [
+  { x: bkColX(4), y: bkRowY(9), w: 2*GRID, h: 4*GRID, palletCols: 2, palletRows: 4, large: true  },
+  { x: bkColX(6), y: bkRowY(9), w: 2*GRID, h: 4*GRID, palletCols: 2, palletRows: 4, large: true  },
+  { x: bkColX(8),     y: bkRowY(8), w: 9, h: 3*GRID, palletCols: 1, palletRows: 3, large: false },
+  { x: bkColX(8) + 9, y: bkRowY(8), w: 9, h: 3*GRID, palletCols: 1, palletRows: 3, large: false },
+];
 
 // ── Proximity and exclusion geometry ──────────────────────────────────────
 const ROAD_RECTS = [
@@ -243,65 +282,212 @@ const ROAD_RECTS = [
   { x: TX,       y: CRES2_Y, w: TW,   h: GRID },
   { x: TX,       y: CRES3_Y, w: TW,   h: GRID },
 ];
-const TRACK_ZONES = [];  // placeholder — no tracks yet; future train lines excluded here
-const PUBLIC_WALK_RECTS = [
-  { x: BAK_PLAZA_X,   y: BAK_PLAZA_Y,   w: BAK_PLAZA_W,  h: BAK_PLAZA_H  },
-  { x: BAK_PUBPARK_X, y: BAK_PUBPARK_Y, w: BAK_PUBPARK_W, h: BAK_PUBPARK_H },
-  { x: BAK_FORE_X,    y: BAK_FORE_Y,    w: BAK_FORE_W,   h: BAK_FORE_H   },
-];
-const GRASS_RADIUS = 8 * GRID;  // 144px max grass-walk radius from any road
+const TRACK_ZONES = [];
+const PUBLIC_WALK_RECTS = [];  // bakery interior is role-access only, not public
+const GRASS_RADIUS = 8 * GRID;
 
 function drawPublicArea() {
-  // ── Plaza (town square) X=0-54, Y=TY to TY+54
-  ctx.fillStyle = '#c9b38a';
-  ctx.fillRect(BAK_PLAZA_X, BAK_PLAZA_Y, BAK_PLAZA_W, BAK_PLAZA_H);
-  // benches
-  ctx.fillStyle = '#7a5a3c';
-  ctx.fillRect(6, TY + 10, 14, 4);
-  ctx.fillRect(6, TY + 36, 14, 4);
-  ctx.fillRect(34, TY + 10, 14, 4);
-  ctx.fillRect(34, TY + 36, 14, 4);
+  if (!bakery) return;
 
-  // ── Public car park X=54-126, Y=TY to TY+54 (4 perpendicular bays, 2 rows)
+  // ── Truck yard tarmac (rows 6-9, cols 4-8): Y=390-462, X=54-144 ──────────
   ctx.fillStyle = '#3c3c3c';
-  ctx.fillRect(BAK_PUBPARK_X, BAK_PUBPARK_Y, BAK_PUBPARK_W, BAK_PUBPARK_H);
-  ctx.strokeStyle = '#e0e0e0'; ctx.lineWidth = 1;
-  for (let i = 0; i < 4; i++) {
-    ctx.strokeRect(BAK_PUBPARK_X + i*18 + 1, BAK_PUBPARK_Y + 1, 16, 26);
-    ctx.strokeRect(BAK_PUBPARK_X + i*18 + 1, BAK_PUBPARK_Y + 27, 16, 26);
+  ctx.fillRect(bkColX(4), BK_YARD_Y, 5 * GRID, BK_YARD_H);
+
+  // P bay markings: cols 4, 6, 8 at rows 6-9 (white lines between bays)
+  ctx.strokeStyle = '#707070'; ctx.lineWidth = 1;
+  // Large truck A bay lines (cols 4-5)
+  for (let r = 6; r <= 9; r++) {
+    ctx.strokeRect(bkColX(4) + 1, bkRowY(r) + 1, 2*GRID - 2, GRID - 2);
+  }
+  // Large truck B bay lines (cols 6-7)
+  for (let r = 6; r <= 9; r++) {
+    ctx.strokeRect(bkColX(6) + 1, bkRowY(r) + 1, 2*GRID - 2, GRID - 2);
+  }
+  // Small truck bay lines (col 8, rows 6-8)
+  for (let r = 6; r <= 8; r++) {
+    ctx.strokeRect(bkColX(8) + 1, bkRowY(r) + 1, GRID - 2, GRID - 2);
   }
 
-  // ── Bakery building X=0-108, Y=TY+54 to TY+108
-  ctx.fillStyle = '#e8c97a';
-  ctx.fillRect(BAK_BLDG_X, BAK_BLDG_Y, BAK_BLDG_W, BAK_BLDG_H);
-  ctx.strokeStyle = '#5a4a36'; ctx.lineWidth = 2;
-  ctx.strokeRect(BAK_BLDG_X, BAK_BLDG_Y, BAK_BLDG_W, BAK_BLDG_H);
-  // Roof strip across top
-  ctx.fillStyle = '#c4956a';
-  ctx.fillRect(BAK_BLDG_X, BAK_BLDG_Y, BAK_BLDG_W, 4);
-  // Windows
-  ctx.fillStyle = '#9ad6e8';
-  ctx.fillRect(8, BAK_BLDG_Y + 8, 14, 10);
-  ctx.fillRect(40, BAK_BLDG_Y + 8, 14, 10);
-  ctx.fillRect(68, BAK_BLDG_Y + 8, 14, 10);
-  // Doors on south face (row 5, facing forecourt)
+  // ── Dividing wall between interior (cols 1-3) and yard (cols 4-8) ────────
+  ctx.fillStyle = '#8b7355';
+  ctx.fillRect(bkColX(4) - 2, BK_INT_Y, 3, BK_INT_H);
+
+  // ── Building interior floor (cols 1-8, rows 0-5) ─────────────────────────
+  // Structural B cells: background
+  ctx.fillStyle = '#d4c49a';
+  ctx.fillRect(bkColX(1), BK_INT_Y, 8 * GRID, BK_INT_H);
+
+  // Storage cells (cols 1-5, rows 2-5) — show flour pallets
+  for (const sc of bakery.storageGrid) {
+    ctx.fillStyle = sc.hasPallet ? '#c8a868' : '#bca87a';
+    ctx.fillRect(sc.x + 1, sc.y + 1, GRID - 2, GRID - 2);
+    if (sc.hasPallet) {
+      // Pallet visual: stacked sacks
+      ctx.fillStyle = '#e8d090';
+      ctx.fillRect(sc.x + 3, sc.y + 3, GRID - 6, GRID - 6);
+      ctx.strokeStyle = '#a0803a'; ctx.lineWidth = 1;
+      ctx.strokeRect(sc.x + 3, sc.y + 3, GRID - 6, GRID - 6);
+    } else {
+      ctx.strokeStyle = '#a8946a'; ctx.lineWidth = 1;
+      ctx.strokeRect(sc.x + 1, sc.y + 1, GRID - 2, GRID - 2);
+    }
+  }
+
+  // Bread display V cells (row 1, cols 1-6) — filled with bread slots
+  for (const vc of BK_V_CELLS) {
+    ctx.fillStyle = '#b89050';
+    ctx.fillRect(vc.x + 1, vc.y + 1, GRID - 2, GRID - 2);
+    ctx.strokeStyle = '#7a5a28'; ctx.lineWidth = 1;
+    ctx.strokeRect(vc.x + 1, vc.y + 1, GRID - 2, GRID - 2);
+    if (vc.active) {
+      // Draw bread items in 2×2 sub-grid within this V cell
+      const vcIdx = vc.col - 1;  // 0-indexed
+      for (let si = 0; si < 4; si++) {
+        const slotIdx = vcIdx * 4 + si;
+        if (slotIdx < bakery.breadCount) {
+          const sx = vc.x + 2 + (si % 2) * 7;
+          const sy = vc.y + 2 + Math.floor(si / 2) * 7;
+          ctx.fillStyle = '#d4a044';
+          ctx.fillRect(sx, sy, 6, 6);
+          ctx.fillStyle = '#f0c060';
+          ctx.fillRect(sx + 1, sy + 1, 3, 2);
+        }
+      }
+    }
+  }
+
+  // Oven glow (drawn before oven rect so it sits behind)
+  for (let i = 0; i < 2; i++) {
+    const ov = bakery.ovens[i];
+    if (ov.baking) {
+      const alpha = 0.25 + 0.2 * Math.sin(ov.glowPhase);
+      const grd = ctx.createRadialGradient(ov.x + 9, ov.y + 9, 2, ov.x + 9, ov.y + 9, 16);
+      grd.addColorStop(0, `rgba(255,140,0,${alpha + 0.3})`);
+      grd.addColorStop(1, 'rgba(255,80,0,0)');
+      ctx.fillStyle = grd;
+      ctx.fillRect(ov.x - 7, ov.y - 7, GRID + 14, GRID + 14);
+    }
+  }
+
+  // Oven cells (col 8, rows 3 and 2)
+  for (let i = 0; i < 2; i++) {
+    const ov = bakery.ovens[i];
+    ctx.fillStyle = '#5a3520';
+    ctx.fillRect(ov.x + 1, ov.y + 1, GRID - 2, GRID - 2);
+    // Oven door (dark arc approximated as rect)
+    ctx.fillStyle = ov.baking ? '#ff6000' : '#1a0a00';
+    ctx.fillRect(ov.x + 4, ov.y + 4, GRID - 8, GRID - 8);
+    ctx.strokeStyle = '#8b5a30'; ctx.lineWidth = 1;
+    ctx.strokeRect(ov.x + 1, ov.y + 1, GRID - 2, GRID - 2);
+    // Loaf on top when ready
+    if (ov.loafReady) {
+      ctx.fillStyle = '#c4803a';
+      ctx.fillRect(ov.x + 3, ov.y - 5, GRID - 6, 5);
+      ctx.fillStyle = '#e8a050';
+      ctx.fillRect(ov.x + 5, ov.y - 4, GRID - 10, 2);
+    }
+  }
+
+  // Row 0 — building row at road level (B B B D D B B B)
+  // Doors at cols 4-5
   ctx.fillStyle = '#7a4a28';
-  ctx.fillRect(36, BAK_BLDG_Y + BAK_BLDG_H - 12, 12, 12);
-  ctx.fillRect(60, BAK_BLDG_Y + BAK_BLDG_H - 12, 12, 12);
-  // Door detail lines
+  ctx.fillRect(bkColX(4) + 2, bkRowY(0) + 2, GRID - 4, GRID - 4);
+  ctx.fillRect(bkColX(5) + 2, bkRowY(0) + 2, GRID - 4, GRID - 4);
   ctx.strokeStyle = '#5a3a1a'; ctx.lineWidth = 1;
-  ctx.strokeRect(36, BAK_BLDG_Y + BAK_BLDG_H - 12, 12, 12);
-  ctx.strokeRect(60, BAK_BLDG_Y + BAK_BLDG_H - 12, 12, 12);
+  ctx.strokeRect(bkColX(4) + 2, bkRowY(0) + 2, GRID - 4, GRID - 4);
+  ctx.strokeRect(bkColX(5) + 2, bkRowY(0) + 2, GRID - 4, GRID - 4);
 
-  // ── Side alley X=108-126, Y=TY+54 to TY+126 (connects spine to forecourt)
-  ctx.fillStyle = '#4a4a4a';
-  ctx.fillRect(BAK_ALLEY_X, BAK_ALLEY_Y, BAK_ALLEY_W, BAK_ALLEY_H);
+  // Windows on north face of building (row 5 = top of interior block)
+  ctx.fillStyle = '#9ad6e8';
+  ctx.fillRect(bkColX(1) + 3, bkRowY(5) + 4, 12, 8);
+  ctx.fillRect(bkColX(2) + 3, bkRowY(5) + 4, 12, 8);
+  ctx.fillRect(bkColX(3) + 3, bkRowY(5) + 4, 12, 8);
 
-  // ── Car forecourt X=0-108, Y=TY+108 to TY+126 (6 nose-in bays)
-  ctx.fillStyle = '#3c3c3c';
-  ctx.fillRect(BAK_FORE_X, BAK_FORE_Y, BAK_FORE_W, BAK_FORE_H);
-  ctx.strokeStyle = '#e0e0e0'; ctx.lineWidth = 1;
-  for (let i = 0; i < 6; i++) ctx.strokeRect(BAK_FORE_X + i*18 + 1, BAK_FORE_Y + 1, 16, 16);
+  // Building outline
+  ctx.strokeStyle = '#5a4a36'; ctx.lineWidth = 2;
+  ctx.strokeRect(bkColX(1), BK_INT_Y, 8 * GRID, BK_INT_H);
+
+  // Draw trucks
+  drawBakeryTrucks();
+
+  // Draw jigger at its current position (drawn after trucks, before people)
+  drawJigger();
+}
+
+function drawBakeryTrucks() {
+  if (!bakery) return;
+  for (let ti = 0; ti < bakery.trucks.length; ti++) {
+    const tr = bakery.trucks[ti];
+    const def = BK_TRUCK_DEFS[ti];
+    // Truck body
+    ctx.fillStyle = tr.large ? '#4a6080' : '#607080';
+    ctx.fillRect(tr.x, tr.y, tr.w, tr.h);
+    // Cab (top end, farthest from bakery)
+    ctx.fillStyle = tr.large ? '#3a5070' : '#506070';
+    ctx.fillRect(tr.x, tr.y, tr.w, Math.min(8, tr.h));
+    // Cab windscreen
+    ctx.fillStyle = '#9ad6e8';
+    ctx.fillRect(tr.x + 2, tr.y + 2, tr.w - 4, 4);
+    // Open back (near/bottom, facing bakery) — slightly lighter
+    ctx.fillStyle = '#6a8090';
+    ctx.fillRect(tr.x, tr.y + tr.h - 4, tr.w, 4);
+    // Pallet bays
+    const palW = tr.w / def.palletCols;
+    const palH = tr.h / def.palletRows;
+    // Pallets render from back (bottom) upward: pallet[0] = bottom row
+    let idx = 0;
+    for (let pr = def.palletRows - 1; pr >= 0; pr--) {
+      for (let pc = 0; pc < def.palletCols; pc++) {
+        const px = tr.x + pc * palW + 1;
+        const py = tr.y + (tr.h - (pr + 1) * palH) + 1;
+        const pw = palW - 2, ph = palH - 2;
+        if (tr.pallets[idx]) {
+          ctx.fillStyle = '#e8d090';
+          ctx.fillRect(px, py, pw, ph);
+          ctx.strokeStyle = '#a0803a'; ctx.lineWidth = 0.5;
+          ctx.strokeRect(px, py, pw, ph);
+        }
+        idx++;
+      }
+    }
+    // Truck outline
+    ctx.strokeStyle = '#2a3a4a'; ctx.lineWidth = 1;
+    ctx.strokeRect(tr.x, tr.y, tr.w, tr.h);
+  }
+}
+
+function drawJigger() {
+  if (!bakery) return;
+  const jg = bakery.jigger;
+  const jx = Math.floor(jg.x), jy = Math.floor(jg.y);
+  // Draw based on heading
+  // Jigger: forks point in direction of travel (toward truck/storage)
+  // Body is ~14px long, 8px wide; forks 4px long; handle (Y-shape) at rear
+  ctx.save();
+  ctx.translate(jx, jy);
+  // Rotate based on heading: N=up, S=down, E=right, W=left
+  const rot = { N: -Math.PI/2, S: Math.PI/2, E: 0, W: Math.PI }[jg.heading] || 0;
+  ctx.rotate(rot);
+  // Forks (front): two thin prongs
+  ctx.fillStyle = '#cc2222';
+  ctx.fillRect(4, -3, 7, 2);   // top fork
+  ctx.fillRect(4, 1,  7, 2);   // bottom fork
+  // Body
+  ctx.fillStyle = '#dd3333';
+  ctx.fillRect(-4, -3, 8, 6);
+  // Handle Y-shape (rear): vertical stem + two arms
+  ctx.fillStyle = '#bb1111';
+  ctx.fillRect(-8, -1, 4, 2);  // stem
+  ctx.fillRect(-10, -4, 2, 3); // left arm
+  ctx.fillRect(-10, 1,  2, 3); // right arm
+  // Pallet on top when loaded
+  if (jg.palletLoaded) {
+    ctx.fillStyle = '#e8d090';
+    ctx.fillRect(-4, -5, 8, 10);
+    ctx.strokeStyle = '#a0803a'; ctx.lineWidth = 0.5;
+    ctx.strokeRect(-4, -5, 8, 10);
+  }
+  ctx.restore();
 }
 
 // ── Draw: parking bay markings on crescent roads ───────────────────────────
@@ -426,7 +612,17 @@ function drawHUD() {
   const lines = [`FPS: ${_fps}`, `People: ${people.length}`].concat(
     order.filter(s => counts[s]).map(s => `${s}: ${counts[s]}`)
   );
-  const fw = 148, lh = 12, pad = 6;
+  if (bakery) {
+    lines.push('──── BAKERY ────');
+    lines.push(`Bread: ${bakery.breadCount}/20`);
+    lines.push(`Delivered: ${bakery.jiggWorker.delivered}/20`);
+    const palletTotal = bakery.storageGrid.filter(s => s.hasPallet).length;
+    lines.push(`Storage: ${palletTotal}/20`);
+    lines.push(`Jigger: ${bakery.jiggWorker.bkState.replace('_',' ')}`);
+    lines.push(`Baker:  ${bakery.baker.bkState.replace('_',' ')}`);
+    lines.push(`Server: ${bakery.server.bkState.replace('_',' ')}`);
+  }
+  const fw = 160, lh = 12, pad = 6;
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
   ctx.fillRect(W - fw - 4, 4, fw, lines.length * lh + pad * 2);
   ctx.fillStyle = '#e8e8e8'; ctx.font = '10px monospace';
@@ -451,16 +647,57 @@ function drawPeople() {
 function draw() {
   drawGrass();
   drawRoads();
-  drawPublicArea();
+  drawPublicArea();   // includes bakery interior, trucks, jigger
   drawGardens();
   drawHouses();
   drawParkingBays();
   // parked cars
   for (const p of people) if (p.car.parked) drawCarSprite(p.car.x, p.car.y, p.car.heading, p.skin.carColor, false);
   drawPeople();
-  // moving cars (apply left-hand lane offset for all on-road driving states)
+  drawBakeryActors();
+  // moving cars
   for (const p of people) if (!p.car.parked) drawCarSprite(p.car.x, p.car.y, p.car.heading, p.skin.carColor, p.state === 'DRIVE' || p.state === 'PARK_CAR');
   drawHUD();
+}
+
+const JIGGER_PUSH_STATES = new Set([
+  'APPROACH_TRUCK','LOAD_PAUSE','CARRY_TO_STORAGE','DROP_PAUSE','RETURN_TO_LANE'
+]);
+// Pixel offset from jigger centre to place worker (they push from behind)
+const JIGGER_PUSH_OFFSET = { N:[0,7], S:[0,-7], E:[-7,0], W:[7,0] };
+
+function drawBakeryActors() {
+  if (!bakery) return;
+  for (const actor of [bakery.jiggWorker, bakery.baker, bakery.server]) {
+    if (!actor || !actor.visible) continue;
+
+    let drawX = actor.x, drawY = actor.y;
+    const isPushing = actor.role === 'jigger_worker' && JIGGER_PUSH_STATES.has(actor.bkState);
+    if (isPushing) {
+      // Offset worker behind the jigger
+      const off = JIGGER_PUSH_OFFSET[bakery.jigger.heading] || [0, 0];
+      drawX = bakery.jigger.x + off[0];
+      drawY = bakery.jigger.y + off[1];
+    }
+
+    const idleStates = new Set(['JIGGER_IDLE','BAKER_IDLE','SERVER_IDLE','AT_POST','AT_JIGGER','WAIT_STORAGE','WAIT_FLOUR','WAIT_OVEN','LOAD_PAUSE','DROP_PAUSE']);
+    const walking = !idleStates.has(actor.bkState) && actor.legFrame !== 2;
+    drawPersonSprite(drawX, drawY, actor.skin, walking, false);
+
+    // Carried item (above head)
+    const ix = Math.floor(drawX), iy = Math.floor(drawY);
+    if (actor.carrying === 'flour') {
+      ctx.fillStyle = '#f0f0f0';
+      ctx.fillRect(ix - 2, iy - 11, 5, 5);
+      ctx.strokeStyle = '#c0c0c0'; ctx.lineWidth = 0.5;
+      ctx.strokeRect(ix - 2, iy - 11, 5, 5);
+    } else if (actor.carrying === 'loaf') {
+      ctx.fillStyle = '#c4803a';
+      ctx.fillRect(ix - 3, iy - 10, 6, 4);
+      ctx.fillStyle = '#e8a050';
+      ctx.fillRect(ix - 2, iy - 9, 3, 2);
+    }
+  }
 }
 
 // ── Step 3: buildHomes() ──────────────────────────────────────────────────
@@ -598,7 +835,7 @@ function buildStreetNodes() {
     for (let gy = 0; gy <= H; gy += GRID) {
       if (isInTrackZone(gx, gy)) continue;
       const onResBldg = BUILDING_BOXES.some(b => gx >= b.x && gx < b.x + b.w && gy >= b.y && gy < b.y + b.h);
-      const onBakBldg = gx >= BAK_BLDG_X && gx < BAK_BLDG_X + BAK_BLDG_W && gy >= BAK_BLDG_Y && gy < BAK_BLDG_Y + BAK_BLDG_H;
+      const onBakBldg = gx >= BK_FULL_X && gx < BK_FULL_X + BK_FULL_W && gy >= BK_FULL_Y && gy < BK_FULL_Y + BK_FULL_H;
       if (onResBldg || onBakBldg) continue;
       if (distToRoads(gx, gy) <= GRASS_RADIUS || isInPublicArea(gx, gy))
         PED_NODES.push({ x: gx, y: gy });
@@ -617,9 +854,9 @@ function nearestNode(x, y, nodes) {
 
 // Check if a point is inside a foreign building/garden (not own home's building)
 function insideForeignBuilding(x, y, homeId) {
-  // Bakery building interior — nobody lives there, all residents are blocked
-  if (x >= BAK_BLDG_X && x < BAK_BLDG_X + BAK_BLDG_W &&
-      y >= BAK_BLDG_Y && y < BAK_BLDG_Y + BAK_BLDG_H) return true;
+  // Bakery full footprint — blocked for all town residents
+  if (x >= BK_FULL_X && x < BK_FULL_X + BK_FULL_W &&
+      y >= BK_FULL_Y && y < BK_FULL_Y + BK_FULL_H) return true;
   const h = homes[homeId];
   for (const box of BUILDING_BOXES) {
     if (box.bldgKey === `${h.rowIdx}_${h.bldgInRow}`) continue; // own building
@@ -992,9 +1229,451 @@ function startPace(p, h) {
   ];
 }
 
+// ── Bakery: walk path from any home to the bakery door ────────────────────
+function walkToBakeryPath(h) {
+  const gx = h.gate.x + 2, gy = h.gate.y + 1;
+  const roadAboveY = h.rowIdx === 0 ? MAIN_CY : h.rowIdx === 1 ? CRES1_CY : CRES2_CY;
+  return makeAxisAligned(h.houseRect.hx + 9, h.houseRect.hy + 9, [
+    { x: h.doorX + 1,        y: h.doorY + 2 },
+    { x: gx,                 y: gy },
+    { x: gx,                 y: roadAboveY },
+    { x: SPINE_CX,           y: roadAboveY },
+    { x: SPINE_CX,           y: MAIN_CY },
+    { x: BK_BAKER_ENTRY_X,  y: MAIN_CY },
+    { x: BK_BAKER_ENTRY_X,  y: BK_BAKER_ENTRY_Y },
+  ]);
+}
+
+// ── Bakery: init ──────────────────────────────────────────────────────────
+function initBakery() {
+  const trucks = BK_TRUCK_DEFS.map((def, i) => ({
+    ...def,
+    pallets: Array(def.palletCols * def.palletRows).fill(true),
+    id: i,
+  }));
+
+  const storageGrid = BK_STORAGE_CELLS.map(sc => ({ ...sc, hasPallet: false }));
+
+  // Pick 3 random distinct homes for bakery workers
+  const pool = [...Array(homes.length).keys()].sort(() => Math.random() - 0.5);
+  const [jiggIdx, bakerIdx, serverIdx] = pool;
+
+  function makeActor(homeIdx, role, extraWaypoints) {
+    const h = homes[homeIdx];
+    const basePath = walkToBakeryPath(h);
+    // Append extra waypoints after the bakery door (axis-align each segment)
+    let fullPath = [...basePath];
+    let lastX = BK_BAKER_ENTRY_X, lastY = BK_BAKER_ENTRY_Y;
+    for (const wp of extraWaypoints) {
+      if (Math.abs(wp.x - lastX) > 0.5 && Math.abs(wp.y - lastY) > 0.5)
+        fullPath.push({ x: wp.x, y: lastY });
+      fullPath.push({ x: wp.x, y: wp.y });
+      lastX = wp.x; lastY = wp.y;
+    }
+    return {
+      role, homeIdx,
+      x: h.houseRect.hx + 9, y: h.houseRect.hy + 9,
+      skin: { headColor: '#f4c2a1', shirtColor: h.color },
+      path: fullPath,
+      legFrame: 0, moveDist: 0,
+      bkState: 'WALK_TO_BAKERY',
+      stateTimer: 0,
+      carrying: null,
+      visible: true,
+      _px: 0, _py: 0,
+    };
+  }
+
+  const jiggWorker = makeActor(jiggIdx, 'jigger_worker', [
+    { x: BK_JIGGER_HOME_X, y: BK_BAKER_ENTRY_Y },
+    { x: BK_JIGGER_HOME_X, y: BK_JIGGER_HOME_Y },
+  ]);
+  jiggWorker.currentTruck  = 0;
+  jiggWorker.currentPallet = trucks[0].pallets.length - 1;  // start from nearest pallet
+  jiggWorker.delivered     = 0;
+  jiggWorker.targetStorage = null;
+
+  const baker = makeActor(bakerIdx, 'baker', []);
+  baker.nextOven = 0;
+  baker.floursDeposited = 0;
+  baker.targetStorage = null;
+
+  const server = makeActor(serverIdx, 'server', [
+    { x: BK_SERVER_X, y: BK_BAKER_ENTRY_Y },
+    { x: BK_SERVER_X, y: BK_SERVER_Y },
+  ]);
+  server.targetOven = -1;
+
+  bakery = {
+    trucks, storageGrid,
+    ovens: [
+      { x: BK_OVEN1_X, y: BK_OVEN1_Y, baking: false, timer: 0, loafReady: false, glowPhase: 0 },
+      { x: BK_OVEN2_X, y: BK_OVEN2_Y, baking: false, timer: 0, loafReady: false, glowPhase: 0 },
+    ],
+    breadCount: 0,
+    jiggWorker, baker, server,
+    jigger: { x: BK_JIGGER_HOME_X, y: BK_JIGGER_HOME_Y, heading: 'N', palletLoaded: false },
+  };
+}
+
+// Move actor one step along path; returns true when path exhausted
+function moveActor(actor, dt) {
+  if (actor.path.length === 0) return true;
+  const px0 = actor.x, py0 = actor.y;
+  const wp = actor.path[0];
+  if (stepToward(actor, wp.x, wp.y, WALK_SPEED, dt)) actor.path.shift();
+  actor.moveDist += Math.hypot(actor.x - px0, actor.y - py0);
+  if (actor.moveDist >= 4) { actor.legFrame = (actor.legFrame + 1) % 3; actor.moveDist -= 4; }
+  return actor.path.length === 0;
+}
+
+// ── Bakery: update orchestrator ───────────────────────────────────────────
+function updateBakery(dt) {
+  if (!bakery) return;
+  for (const ov of bakery.ovens) {
+    if (ov.baking) {
+      ov.glowPhase += dt * 4;
+      if (!ov.loafReady) { ov.timer -= dt; if (ov.timer <= 0) ov.loafReady = true; }
+    }
+  }
+  updateJiggerWorker(dt);
+  updateBakerActor(dt);
+  updateServerActor(dt);
+}
+
+// ── Jigger worker state machine ───────────────────────────────────────────
+function updateJiggerWorker(dt) {
+  const w  = bakery.jiggWorker;
+  const jg = bakery.jigger;
+
+  switch (w.bkState) {
+
+    case 'WALK_TO_BAKERY': {
+      const done = moveActor(w, dt);
+      if (done) {
+        // All walk-to path waypoints consumed (includes walk-to-jigger-home steps)
+        w.bkState = 'AT_JIGGER';
+        w.stateTimer = 0.4;
+      }
+      break;
+    }
+
+    case 'AT_JIGGER': {
+      w.stateTimer -= dt;
+      jg.x = w.x; jg.y = w.y;
+      if (w.stateTimer <= 0) w.bkState = 'FIND_PALLET';
+      break;
+    }
+
+    case 'FIND_PALLET': {
+      if (w.delivered >= 20) { w.bkState = 'JIGGER_IDLE'; break; }
+      const emptyStorage = bakery.storageGrid.find(s => !s.hasPallet);
+      if (!emptyStorage) { w.stateTimer = 0.5; w.bkState = 'WAIT_STORAGE'; break; }
+
+      // Scan trucks from current position, taking nearest pallet first (high idx = near)
+      let found = false;
+      outer: for (let ti = w.currentTruck; ti < bakery.trucks.length; ti++) {
+        const tr = bakery.trucks[ti];
+        const startPi = (ti === w.currentTruck) ? w.currentPallet : tr.pallets.length - 1;
+        for (let pi = startPi; pi >= 0; pi--) {
+          if (tr.pallets[pi]) {
+            w.currentTruck  = ti;
+            w.currentPallet = pi;
+            found = true;
+            break outer;
+          }
+        }
+        // This truck exhausted — move to next
+        w.currentTruck = ti + 1;
+        if (ti + 1 < bakery.trucks.length)
+          w.currentPallet = bakery.trucks[ti + 1].pallets.length - 1;
+      }
+      if (!found) { w.bkState = 'JIGGER_IDLE'; break; }
+      w.targetStorage = emptyStorage;
+
+      // Compute pallet world centre
+      const def = BK_TRUCK_DEFS[w.currentTruck];
+      const tr  = bakery.trucks[w.currentTruck];
+      const palW = tr.w / def.palletCols;
+      const palH = tr.h / def.palletRows;
+      const pi   = w.currentPallet;
+      // idx mapping: pr = (palletRows-1) - floor(idx/palletCols)  (pr=0 → bottom/near)
+      const pr   = (def.palletRows - 1) - Math.floor(pi / def.palletCols);
+      const pc   = pi % def.palletCols;
+      const palCY = tr.y + (tr.h - (pr + 1) * palH) + palH / 2;
+      const palCX = tr.x + pc * palW + palW / 2;
+      w._palCX = palCX; w._palCY = palCY;
+
+      // Lane approach X
+      if      (w.currentTruck === 0) w._laneX = BK_LANE1_CX;
+      else if (w.currentTruck === 1) w._laneX = BK_LANE2_CX;
+      else w._laneX = tr.x + tr.w / 2;  // small trucks: direct centre
+
+      w.path = makeAxisAligned(w.x, w.y, [
+        { x: w._laneX, y: w.y },
+        { x: w._laneX, y: palCY },
+      ]);
+      w.bkState = 'APPROACH_TRUCK';
+      break;
+    }
+
+    case 'WAIT_STORAGE': {
+      w.stateTimer -= dt;
+      jg.x = w.x; jg.y = w.y;
+      if (w.stateTimer <= 0) w.bkState = 'FIND_PALLET';
+      break;
+    }
+
+    case 'APPROACH_TRUCK': {
+      if (w.path.length > 0) {
+        const wp = w.path[0];
+        const dx = wp.x - w.x, dy = wp.y - w.y;
+        if (Math.abs(dx) > Math.abs(dy)) jg.heading = dx > 0 ? 'E' : 'W';
+        else jg.heading = dy > 0 ? 'S' : 'N';
+      }
+      const done = moveActor(w, dt);
+      jg.x = w.x; jg.y = w.y;
+      if (done) {
+        // Face toward truck interior
+        jg.heading = (w.currentTruck <= 1) ? 'W' : 'N';
+        w.stateTimer = 0.7;
+        w.bkState = 'LOAD_PAUSE';
+      }
+      break;
+    }
+
+    case 'LOAD_PAUSE': {
+      w.stateTimer -= dt;
+      jg.x = w.x; jg.y = w.y;
+      if (w.stateTimer <= 0) {
+        bakery.trucks[w.currentTruck].pallets[w.currentPallet] = false;
+        jg.palletLoaded = true;
+        jg.heading = (w.currentTruck <= 1) ? 'E' : 'S';
+        // Path to storage
+        const st = w.targetStorage;
+        w.path = makeAxisAligned(w.x, w.y, [
+          { x: w._laneX, y: BK_INT_Y + 9 },
+          { x: st.cx,    y: BK_INT_Y + 9 },
+          { x: st.cx,    y: st.cy },
+        ]);
+        w.bkState = 'CARRY_TO_STORAGE';
+      }
+      break;
+    }
+
+    case 'CARRY_TO_STORAGE': {
+      if (w.path.length > 0) {
+        const wp = w.path[0];
+        const dx = wp.x - w.x, dy = wp.y - w.y;
+        if (Math.abs(dx) > Math.abs(dy)) jg.heading = dx > 0 ? 'E' : 'W';
+        else jg.heading = dy > 0 ? 'S' : 'N';
+      }
+      const done = moveActor(w, dt);
+      jg.x = w.x; jg.y = w.y;
+      if (done) { jg.heading = 'S'; w.stateTimer = 0.7; w.bkState = 'DROP_PAUSE'; }
+      break;
+    }
+
+    case 'DROP_PAUSE': {
+      w.stateTimer -= dt;
+      jg.x = w.x; jg.y = w.y;
+      if (w.stateTimer <= 0) {
+        w.targetStorage.hasPallet = true;
+        jg.palletLoaded = false;
+        w.delivered++;
+        // Advance to next pallet index
+        w.currentPallet--;
+        if (w.currentPallet < 0 && w.currentTruck + 1 < bakery.trucks.length) {
+          w.currentTruck++;
+          w.currentPallet = bakery.trucks[w.currentTruck].pallets.length - 1;
+        }
+        // Return jigger to lane before picking next
+        w.path = [{ x: w._laneX, y: w.y }];
+        w.bkState = 'RETURN_TO_LANE';
+      }
+      break;
+    }
+
+    case 'RETURN_TO_LANE': {
+      const done = moveActor(w, dt);
+      jg.x = w.x; jg.y = w.y;
+      if (done) w.bkState = 'FIND_PALLET';
+      break;
+    }
+
+    case 'JIGGER_IDLE':
+      jg.x = BK_JIGGER_HOME_X; jg.y = BK_JIGGER_HOME_Y; jg.heading = 'N';
+      break;
+  }
+}
+
+// ── Baker state machine ───────────────────────────────────────────────────
+function updateBakerActor(dt) {
+  const b = bakery.baker;
+  switch (b.bkState) {
+
+    case 'WALK_TO_BAKERY': {
+      if (moveActor(b, dt)) b.bkState = 'FIND_FLOUR';
+      break;
+    }
+
+    case 'FIND_FLOUR': {
+      if (b.floursDeposited >= 20) { b.bkState = 'BAKER_IDLE'; break; }
+      // Wait for target oven to not already be baking
+      const targetOv = bakery.ovens[b.nextOven];
+      if (targetOv.baking) { b.stateTimer = 0.5; b.bkState = 'WAIT_OVEN'; break; }
+      // Find nearest storage cell with pallet
+      let nearest = null, nearD = Infinity;
+      for (const sc of bakery.storageGrid) {
+        if (!sc.hasPallet) continue;
+        const d = (sc.cx - b.x) ** 2 + (sc.cy - b.y) ** 2;
+        if (d < nearD) { nearD = d; nearest = sc; }
+      }
+      if (!nearest) { b.stateTimer = 0.5; b.bkState = 'WAIT_FLOUR'; break; }
+      b.targetStorage = nearest;
+      b.path = makeAxisAligned(b.x, b.y, [
+        { x: nearest.cx, y: b.y },
+        { x: nearest.cx, y: nearest.cy },
+      ]);
+      b.bkState = 'WALK_TO_FLOUR';
+      break;
+    }
+
+    case 'WAIT_OVEN':
+    case 'WAIT_FLOUR': {
+      b.stateTimer -= dt;
+      if (b.stateTimer <= 0) b.bkState = 'FIND_FLOUR';
+      break;
+    }
+
+    case 'WALK_TO_FLOUR': {
+      if (moveActor(b, dt)) { b.stateTimer = 0.4; b.bkState = 'PICK_FLOUR'; }
+      break;
+    }
+
+    case 'PICK_FLOUR': {
+      b.stateTimer -= dt;
+      if (b.stateTimer <= 0) {
+        if (b.targetStorage && b.targetStorage.hasPallet) {
+          b.targetStorage.hasPallet = false;
+          b.carrying = 'flour';
+          const ov = bakery.ovens[b.nextOven];
+          b.path = makeAxisAligned(b.x, b.y, [
+            { x: ov.x + 9, y: b.y },
+            { x: ov.x + 9, y: ov.y + 9 },
+          ]);
+          b.bkState = 'WALK_TO_OVEN';
+        } else {
+          b.bkState = 'FIND_FLOUR';  // pallet was taken, retry
+        }
+      }
+      break;
+    }
+
+    case 'WALK_TO_OVEN': {
+      if (moveActor(b, dt)) { b.stateTimer = 0.4; b.bkState = 'DEPOSIT_FLOUR'; }
+      break;
+    }
+
+    case 'DEPOSIT_FLOUR': {
+      b.stateTimer -= dt;
+      if (b.stateTimer <= 0) {
+        b.carrying = null;
+        const ov = bakery.ovens[b.nextOven];
+        ov.baking = true; ov.timer = 3.0; ov.glowPhase = 0; ov.loafReady = false;
+        b.nextOven = (b.nextOven + 1) % 2;
+        b.floursDeposited++;
+        b.bkState = 'FIND_FLOUR';
+      }
+      break;
+    }
+
+    case 'BAKER_IDLE': break;
+  }
+}
+
+// ── Server state machine ──────────────────────────────────────────────────
+function updateServerActor(dt) {
+  const s = bakery.server;
+  switch (s.bkState) {
+
+    case 'WALK_TO_BAKERY': {
+      if (moveActor(s, dt)) s.bkState = 'AT_POST';
+      break;
+    }
+
+    case 'AT_POST': {
+      if (bakery.breadCount >= 20) { s.bkState = 'SERVER_IDLE'; break; }
+      for (let i = 0; i < 2; i++) {
+        if (bakery.ovens[i].loafReady) {
+          s.targetOven = i;
+          const ov = bakery.ovens[i];
+          s.path = makeAxisAligned(s.x, s.y, [
+            { x: ov.x + 9, y: s.y },
+            { x: ov.x + 9, y: ov.y + 9 },
+          ]);
+          s.bkState = 'WALK_TO_OVEN';
+          break;
+        }
+      }
+      break;
+    }
+
+    case 'WALK_TO_OVEN': {
+      if (moveActor(s, dt)) { s.stateTimer = 0.4; s.bkState = 'PICK_LOAF'; }
+      break;
+    }
+
+    case 'PICK_LOAF': {
+      s.stateTimer -= dt;
+      if (s.stateTimer <= 0) {
+        const ov = bakery.ovens[s.targetOven];
+        ov.loafReady = false; ov.baking = false;
+        s.carrying = 'loaf';
+        const vcIdx = Math.floor(bakery.breadCount / 4);
+        if (vcIdx >= 5) { s.bkState = 'SERVER_IDLE'; break; }
+        const vc = BK_V_CELLS[vcIdx];
+        s.path = makeAxisAligned(s.x, s.y, [
+          { x: vc.x + 9, y: s.y },
+          { x: vc.x + 9, y: vc.y + 9 },
+        ]);
+        s.bkState = 'WALK_TO_SLOT';
+      }
+      break;
+    }
+
+    case 'WALK_TO_SLOT': {
+      if (moveActor(s, dt)) { s.stateTimer = 0.3; s.bkState = 'PLACE_LOAF'; }
+      break;
+    }
+
+    case 'PLACE_LOAF': {
+      s.stateTimer -= dt;
+      if (s.stateTimer <= 0) {
+        s.carrying = null;
+        bakery.breadCount++;
+        s.path = makeAxisAligned(s.x, s.y, [
+          { x: BK_SERVER_X, y: s.y },
+          { x: BK_SERVER_X, y: BK_SERVER_Y },
+        ]);
+        s.bkState = 'RETURN_TO_POST';
+      }
+      break;
+    }
+
+    case 'RETURN_TO_POST': {
+      if (moveActor(s, dt)) s.bkState = 'AT_POST';
+      break;
+    }
+
+    case 'SERVER_IDLE': break;
+  }
+}
+
 // ── Update ────────────────────────────────────────────────────────────────
 function update(dt) {
   for (const p of people) updatePerson(p, dt);
+  updateBakery(dt);
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────
@@ -1002,6 +1681,7 @@ initVariants();
 buildHomes();
 buildStreetNodes();
 buildPeople();
+initBakery();
 requestAnimationFrame(animate);
 </script>
 </body>
